@@ -1,4 +1,4 @@
-import subprocess
+import subprocess, time, re
 
 def channel2freq(channel) :
   if channel >=1 and channel <= 11 :
@@ -41,3 +41,26 @@ def set_txpower(txpower, is_5g=False) :
   subprocess.call(args)
   subprocess.call(['uci', 'commit'])
   subprocess.call(['wifi', 'reload'])
+
+
+def log(str) :
+  print("[" + time.strftime('%c') + "] " + str)
+
+def get_clients() :
+  args = ['iw', 'wlan0', 'station', 'dump']
+  output = subprocess.check_output(args)
+  sta_num = output.count('Station')
+  lines = output.split('\n')
+
+  clients = dict()
+
+  for i in xrange(0, sta_num) :
+    base = i*18
+    mac = lines[base+0].split()[1]
+    info = dict()
+    info['rx_bytes'] = int(lines[base+2].split()[2])
+    info['tx_bytes'] = int(lines[base+4].split()[2])
+    info['signal'] = int(lines[base+8].split()[1])
+    clients[mac] = info
+
+  return clients
