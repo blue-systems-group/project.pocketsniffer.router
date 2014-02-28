@@ -2,6 +2,7 @@
 
 import socket, json, thread, time
 import utils
+import settings
 
 from client import Client
 
@@ -27,20 +28,13 @@ def update_client_thread(dummy) :
   global g_clients, g_clients_lock
 
   while True :
-    new_clients = dict()
     with g_clients_lock :
       new_clients_list = utils.get_clients()
-      utils.log(', '.join(new_clients_list.keys()))
-      for mac, info  in new_clients_list :
-        if mac in g_clients :
-          g_clients[mac].update_info(info)
-          new_clients[mac] = g_clients[mac]
-        else :
-          new_clients[mac] = Client.create(mac, info)
+      for mac, info in new_clients_list.items() :
+        g_clients.get(mac, Client()).update_info(info)
 
-    g_clients = new_clients
     utils.log("Updated client list: %s" % (', '.join(g_clients.keys())))
-    time.sleep(10)
+    time.sleep(settings.STATION_DUMP_INTERVAL_SEC)
 
 
 def update_client(msg) :
@@ -48,8 +42,8 @@ def update_client(msg) :
   mac = msg['MAC']
   with g_clients_lock :
     if mac not in g_clients :
-      utils.log("Not a client: " + mac)
-      return
+      g_clients[mac] = Client()
+      g_clients[mac].mac = mac
 
     g_clients[mac].update_rf(msg)
 
@@ -67,13 +61,12 @@ def server_thread(dummy) :
     utils.log("Got connection from " + '-'.join([str(i) for i in addr]))
 
     content = recv_all(conn)
-    utils.log(content)
     try :
       msg = json.read(content)
       update_client(msg)
     except :
       utils.log("malformed msg: %s" % (content))
-      pass
+      raise
 
 
 def main() :
