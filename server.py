@@ -33,6 +33,11 @@ def update_client_thread(dummy) :
       for mac, info in new_clients_list.items() :
         g_clients.get(mac, Client()).update_info(info)
 
+      now = time.time()
+      for mac in g_clients.keys() :
+        if now - g_clients[mac].last_updated > 3 * settings.STATION_DUMP_INTERVAL_SEC :
+          del g_clients[mac]
+
     utils.log("Updated client list: %s" % (', '.join(g_clients.keys())))
     time.sleep(settings.STATION_DUMP_INTERVAL_SEC)
 
