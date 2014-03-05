@@ -46,6 +46,11 @@ def set_txpower(txpower, is_5g=False) :
 def log(str) :
   print("[" + time.strftime('%c') + "] " + str)
 
+def scan() :
+  args = ['iw', 'wlan0', 'scan']
+  return subprocess.check_output(args)
+
+
 def get_clients() :
   args = ['iw', 'wlan0', 'station', 'dump']
   output = subprocess.check_output(args)

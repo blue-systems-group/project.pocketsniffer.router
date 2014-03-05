@@ -5,6 +5,7 @@ import utils
 import settings
 
 from client import Client
+from ap import AP
 
 GATEWAY = '192.168.1.1'
 PORT = 1688
@@ -13,6 +14,9 @@ RECV_BUF = 4*1024
 
 g_clients = dict()
 g_clients_lock = thread.allocate_lock()
+
+g_aps = dict()
+g_ap_lock = thread.allocate_lock()
 
 def recv_all(conn) :
   content = []
@@ -40,6 +44,18 @@ def update_client_thread(dummy) :
 
     utils.log("Updated client list: %s" % (', '.join(g_clients.keys())))
     time.sleep(settings.STATION_DUMP_INTERVAL_SEC)
+
+def update_ap_thread(dummy) :
+  global g_aps, g_ap_lock
+
+  while True :
+    with g_ap_lock:
+      g_aps = AP.update()
+      
+      for ap in g_aps.values() :
+        utils.log(str(ap))
+
+    time.sleep(settings.AP_SCAN_INTERVAL_SEC)
 
 
 def update_client(msg) :
@@ -77,6 +93,7 @@ def server_thread(dummy) :
 def main() :
   thread.start_new_thread(server_thread, (None,))
   thread.start_new_thread(update_client_thread, (None,))
+  thread.start_new_thread(update_ap_thread, (None,))
 
   while True :
     pass
