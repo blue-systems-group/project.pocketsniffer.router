@@ -21,6 +21,7 @@ class Client(object) :
     self.last_updated = None
 
   def update_info(self, info) :
+    self.mac = info['mac']
     self.rx_bytes = int(info['rx_bytes'])
     self.tx_bytes = int(info['tx_bytes'])
     self.signal = int(info['signal'])
@@ -34,8 +35,6 @@ class Client(object) :
     self.channel_load = dict()
 
     for info in msg['traffics'] :
-      utils.log(str(info))
-
       srcMac = info['srcMac']
       signal = int(info['signal'])
       channel = int(info['channel'])
@@ -44,6 +43,7 @@ class Client(object) :
       if srcMac not in self.neighbors or signal > self.neighbors[srcMac] :
         self.neighbors[srcMac] = signal
 
-      self.channel_load[channel] = self.channel_load.get(channel, 0) + bytes
+      if srcMac != self.mac :
+        self.channel_load[channel] = self.channel_load.get(channel, 0) + bytes
 
     self.last_updated = time.time()
