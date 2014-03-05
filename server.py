@@ -31,15 +31,20 @@ def recv_all(conn) :
 def update_client_thread(dummy) :
   global g_clients, g_clients_lock
 
+  utils.log("Update client thread running")
+
   while True :
     with g_clients_lock :
-      new_clients_list = utils.get_clients()
-      for mac, info in new_clients_list.items() :
-        g_clients.get(mac, Client()).update_info(info)
+      for mac, info in utils.get_clients().items() :
+        if mac not in g_clients :
+          g_clients[mac] = Client()
+
+        g_clients[mac].update_info(info)
 
       now = time.time()
       for mac in g_clients.keys() :
         if now - g_clients[mac].last_updated > 3 * settings.STATION_DUMP_INTERVAL_SEC :
+          utils.log("Deleting " + mac)
           del g_clients[mac]
 
     utils.log("Updated client list: %s" % (', '.join(g_clients.keys())))
@@ -51,15 +56,52 @@ def update_ap_thread(dummy) :
   while True :
     with g_ap_lock:
       g_aps = AP.update()
-      
-      for ap in g_aps.values() :
-        utils.log(str(ap))
 
+    utils.log("AP list updated, %d ap seen." % (len(g_aps)))
+      
     time.sleep(settings.AP_SCAN_INTERVAL_SEC)
+
+
+def channel_switch_thread(dummy) :
+  global g_clients, g_clients_lock
+
+  utils.log("Channel switch thread running")
+
+  while True :
+    current_channel = utils.get_channel()
+    channel_vote = dict()
+
+    utils.log("Current channel: %d" % (current_channel))
+
+    with g_clients_lock :
+      for c in g_clients.values() :
+        load = c.channel_load
+        if load is None or len(load) == 0 :
+          utils.log("No channel load info for " + str(c.mac))
+          continue
+
+        utils.log("mac: %s, load: %s" % (c.mac, str(load)))
+
+        candidate_channel = min(load, key=lambda t: load[t])
+        if load[current_channel] - load[candidate_channel] > settings.TRAFFIC_THRESHOLD :
+          channel_vote[candidate_channel] = channel_vote.get(candidate_channel, 0) + 1
+
+    if len(channel_vote) != 0 :
+      choice = max(channel_vote, key = lambda t: channel_vote[t])
+      utils.log("final choice: %d" % (choice))
+      if choice != utils.get_channel() :
+        utils.set_channel(choice)
+      else :
+        utils.log("Current channel is optimal choice")
+    else :
+      utils.log("No votes, do not change channel.")
+
+    time.sleep(settings.CHANNEL_SWITCH_INTERVAL_SEC)
 
 
 def update_client(msg) :
   global g_clients, g_clients_lock
+
   mac = msg['MAC']
   with g_clients_lock :
     if mac not in g_clients :
@@ -94,6 +136,7 @@ def main() :
   thread.start_new_thread(server_thread, (None,))
   thread.start_new_thread(update_client_thread, (None,))
   thread.start_new_thread(update_ap_thread, (None,))
+  thread.start_new_thread(channel_switch_thread, (None,))
 
   while True :
     pass
