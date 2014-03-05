@@ -17,6 +17,10 @@ def freq2channel(freq) :
   else :
     raise Exception("Invalid frequency %d" % (freq))
 
+def get_channel() :
+  args = ['uci', 'show', 'wireless.radio0.channel']
+  output = subprocess.check_output(args)
+  return int(output.split('=')[1])
 
 def set_channel(channel) :
   args = ['uci', 'set']
@@ -63,6 +67,7 @@ def get_clients() :
     base = i*18
     mac = lines[base+0].split()[1]
     info = dict()
+    info['mac'] = mac
     info['rx_bytes'] = int(lines[base+2].split()[2])
     info['tx_bytes'] = int(lines[base+4].split()[2])
     info['signal'] = int(lines[base+8].split()[1])
