@@ -1,5 +1,6 @@
 import json
-import utils
+import utils, settings
+from periodic import PeriodicTask
 
 class AP(object) :
 
@@ -36,10 +37,22 @@ class AP(object) :
     return str(self.__dict__)
 
 
-  @classmethod
-  def update(cls) :
+class APTask(PeriodicTask) :
+
+  def __init__(self) :
+    super(APTask, self).__init__(settings.AP_SCAN_INTERVAL_SEC)
+    self.aps = dict()
+    self.aps_lock = self.get_lock()
+
+
+  def do_job(self) :
     output = utils.scan().split('\n')
     index = [i for i in xrange(0, len(output)) if output[i].startswith('BSS')]
     index.append(len(output))
     aps = [AP.create(output[i:j]) for i, j in zip(index[:-1], index[1:])]
-    return dict((ap.bssid, ap) for ap in aps)
+
+    with self.aps_lock :
+      del self.aps
+      self.aps = aps
+
+    self.log("Updated AP list, %d APs found." % (len(self.aps)))
