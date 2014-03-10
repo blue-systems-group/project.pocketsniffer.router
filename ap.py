@@ -2,6 +2,11 @@ import json
 import utils, settings
 from periodic import PeriodicTask
 
+"""
+Access Point
+Obtained by "iw scan"
+"""
+
 class AP(object) :
 
   def __init__(self) :
@@ -37,6 +42,9 @@ class AP(object) :
     return str(self.__dict__)
 
 
+"""
+Periodic task that updates AP list
+"""
 class APTask(PeriodicTask) :
 
   def __init__(self) :

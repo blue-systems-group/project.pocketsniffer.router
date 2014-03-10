@@ -32,11 +32,11 @@ class ServerTask(PeriodicTask) :
     sock.listen(self.backlog)
 
     while True :
-      conn, addr = sock.accept()
-      self.log("Got connection from " + '-'.join([str(i) for i in addr]))
-
-      content = self.recv_all(conn)
       try :
+        conn, addr = sock.accept()
+        self.log("Got connection from " + '-'.join([str(i) for i in addr]))
+
+        content = self.recv_all(conn)
         msg = json.read(content)
         self.client_task.update_rf(msg)
       except :

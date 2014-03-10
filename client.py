@@ -3,14 +3,14 @@ import time, json
 import utils, settings
 from periodic import PeriodicTask
 
+"""
+Station
+Obtained by 'iw station dump'
+"""
 class Client(object) :
 
-  mac = None
-  lastReport = None
-  nearBy = None
-
-  def __init__(self) :
-    self.mac = None
+  def __init__(self, mac) :
+    self.mac = mac
     self.rx_bytes = None
     self.tx_bytes = None
     self.signal = None
@@ -21,13 +21,18 @@ class Client(object) :
 
     self.last_updated = None
 
+  """
+  Update information from iw station dump
+  """
   def update_info(self, info) :
-    self.mac = info['mac']
     self.rx_bytes = int(info['rx_bytes'])
     self.tx_bytes = int(info['tx_bytes'])
     self.signal = int(info['signal'])
     self.last_updated = time.time()
 
+  """
+  Update RF condition from client's report
+  """
   def update_rf(self, msg) :
 
     self.frequency = int(msg['frequency'])
@@ -48,6 +53,7 @@ class Client(object) :
 
     self.last_updated = time.time()
 
+
 """
 Update station info at AP side
 """
@@ -62,7 +68,7 @@ class ClientTask(PeriodicTask) :
     with self.clients_lock :
       for mac, info in utils.get_station_info().items() :
         if mac not in self.clients :
-          self.clients[mac] = Client()
+          self.clients[mac] = Client(mac)
 
         self.clients[mac].update_info(info)
 
@@ -79,7 +85,7 @@ class ClientTask(PeriodicTask) :
     mac = msg['MAC']
     with self.clients_lock :
       if mac not in self.clients :
-        self.clients[mac] = Client()
+        self.clients[mac] = Client(mac)
 
       self.log("Updating RF condition for " + mac)
       self.clients[mac].update_rf(msg)

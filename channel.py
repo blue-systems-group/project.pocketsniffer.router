@@ -1,6 +1,9 @@
 import utils, settings
 from periodic import PeriodicTask
 
+"""
+Periodic task that consider switching channel
+"""
 class ChannelSwitchTask(PeriodicTask) :
 
   def __init__(self, client_task, ap_task) :
