@@ -1,4 +1,4 @@
-import subprocess, time, re
+import os, subprocess, time, re
 
 def channel2freq(channel) :
   if channel >=1 and channel <= 11 :
@@ -23,6 +23,10 @@ def get_current_channel() :
   return int(output.split('=')[1])
 
 def set_channel(channel) :
+
+  # do not use the wifi command to switch channel, but still maintain the
+  # channel coheraence of the configuration file
+
   args = ['uci', 'set']
 
   if channel <= 11 :
@@ -32,7 +36,15 @@ def set_channel(channel) :
 
   subprocess.call(args)
   subprocess.call(['uci', 'commit'])
-  subprocess.call(['wifi', 'reload'])
+
+  # this is the command that actually switches channel
+
+  with open(os.devnull, 'wb') as f :
+    cmd = 'chan_switch 1 ' + str(channel2freq(channel)) + '\n'
+    p = subprocess.Popen('hostapd_cli', stdin=subprocess.PIPE, stdout=f, stderr=f)
+    p.stdin.write(cmd)
+    time.sleep(3)
+    p.kill()
 
 def set_txpower(txpower, is_5g=False) :
   args = ['uci', 'set']
