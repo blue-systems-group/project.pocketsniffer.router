@@ -20,6 +20,7 @@ class Client(object) :
     self.channel_load = None
 
     self.last_updated = None
+    self.rf_last_updated = None
 
   """
   Update information from iw station dump
@@ -34,15 +35,17 @@ class Client(object) :
   Update RF condition from client's report
   """
   def update_rf(self, msg) :
-
     self.frequency = int(msg['frequency'])
     self.neighbors = dict()
     self.channel_load = dict()
 
     for info in msg['traffics'] :
+      channel = int(info['channel'])
+      if channel == 0 :
+        continue
+
       srcMac = info['srcMac']
       signal = int(info['signal'])
-      channel = int(info['channel'])
       bytes = int(info['bytes'])
 
       if srcMac not in self.neighbors or signal > self.neighbors[srcMac] :
@@ -51,7 +54,7 @@ class Client(object) :
       if srcMac != self.mac :
         self.channel_load[channel] = self.channel_load.get(channel, 0) + bytes
 
-    self.last_updated = time.time()
+    self.rf_last_updated = time.time()
 
 
 """
@@ -87,5 +90,6 @@ class ClientTask(PeriodicTask) :
       if mac not in self.clients :
         self.clients[mac] = Client(mac)
 
-      self.log("Updating RF condition for " + mac)
-      self.clients[mac].update_rf(msg)
+      if 'traffics' in msg :
+        self.log("Updating RF condition for " + mac)
+        self.clients[mac].update_rf(msg)

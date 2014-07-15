@@ -24,6 +24,10 @@ def get_current_channel() :
 
 def set_channel(channel) :
 
+  if channel <= 0 :
+    log("Invalid channel %d" % (channel))
+    return
+
   # do not use the wifi command to switch channel, but still maintain the
   # channel coheraence of the configuration file
 

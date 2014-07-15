@@ -1,4 +1,4 @@
-import time, thread
+import time, thread, traceback
 import utils
 
 class PeriodicTask(object) :
@@ -13,8 +13,8 @@ class PeriodicTask(object) :
     while True :
       try :
         self.do_job()
-      except Exception as e:
-        utils.log(str(e))
+      except :
+        utils.log(traceback.format_exc())
 
       time.sleep(self.interval)
 
