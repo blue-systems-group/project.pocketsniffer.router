@@ -11,6 +11,9 @@ class Client(object) :
 
   def __init__(self, mac) :
     self.mac = mac
+
+    self.hostname = None
+    self.ip = None
     self.rx_bytes = None
     self.tx_bytes = None
     self.signal = None
@@ -74,6 +77,13 @@ class ClientTask(PeriodicTask) :
           self.clients[mac] = Client(mac)
 
         self.clients[mac].update_info(info)
+
+      for mac, info in utils.get_dhcp_list().items() :
+        if mac not in self.clients :
+          continue
+
+        self.clients[mac].ip = info['ip']
+        self.clients[mac].hostname = info['hostname']
 
       now = time.time()
       for mac, client in self.clients.items() :

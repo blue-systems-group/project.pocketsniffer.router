@@ -90,3 +90,13 @@ def get_station_info() :
     stations[mac] = info
 
   return stations
+
+def get_dhcp_list() :
+  client_list = dict()
+  with open('/var/dhcp.leases') as f :
+    for line in f.readlines() :
+      parts = line.split()
+      if len(parts) == 5 :
+        client_list[parts[1]] = {"ip": parts[2], "hostname": parts[3]}
+
+  return client_list
