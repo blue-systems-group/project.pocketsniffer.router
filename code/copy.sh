@@ -1,3 +1,3 @@
 #!/bin/bash
 
-scp *.py ap1:pocketadmin/
+scp *.py ap1:projects/pocketsniffer/

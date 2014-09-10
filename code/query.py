@@ -25,6 +25,6 @@ class QueryTask(PeriodicTask) :
           self.log("Ignoring %s: no IP." % (mac))
           continue
         
-        msg = zlib.compress(json.write({"hello":"world"}), 9)
+        msg = zlib.compress(json.dumps({"hello":"world"}), 9)
         self.log("Querying %s (%s). Msg: %s" % (mac, client.ip, ' '.join([c.encode('hex') for c in msg])))
         self.sock.sendto(msg, (client.ip, self.port))

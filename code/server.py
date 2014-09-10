@@ -49,7 +49,7 @@ class ServerTask(PeriodicTask) :
           continue
 
         self.log(content)
-        msg = json.read(content)
+        msg = json.loads(content)
         self.client_task.update_rf(msg)
       except :
         self.log(traceback.format_exc())
