@@ -77,8 +77,11 @@ def install_packages(session, pkgs) :
 log("Checking root password...")
 child = pexpect.spawn('telnet %s' % (args.gateway))
 try :
-  match = child.expect(['Connection refused', PROMPT])
-  if match == 0 :
+  match = child.expect(['Connection refused', 'unreachable', PROMPT], timeout=10)
+  if match == 1 :
+    log("%s unreachable, check router connection." % (args.gateway))
+    exit(0)
+  elif match == 0 :
     log("Unable to telnet, assuming you have already set up root's password.")
   else :
     log("Setting up root password...")
@@ -92,7 +95,6 @@ try :
   child.kill(0)
 except pexpect.TIMEOUT :
   log("telnet timeout. Please check router connection.")
-  log(str(child))
   exit(0)
 
 
@@ -100,7 +102,7 @@ except pexpect.TIMEOUT :
 log("Checking password-free ssh...")
 child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
 try :
-  match = child.expect([PROMPT, 'password'])
+  match = child.expect([PROMPT, 'password', 'unreachable'])
   child.kill(0)
   if match == 0 :
     log("Already have password-free ssh access.");
@@ -146,7 +148,9 @@ for placeholder, sub, f in zip([HOSTNAME_PLACEHOLDER, SSID_PLACEHOLDER, PASSWORD
 
 
 log("Overriding configurations files...")
-subprocess.check_call('scp %s -r %s/* root@%s:/' % (SSH_ARGS, temp_dir, args.gateway), stdout=None, shell=True)
+with open('/dev/null', 'w') as f:
+  subprocess.check_call('scp %s -r %s/* root@%s:/' % (SSH_ARGS, temp_dir, args.gateway),
+      stdout=f, stderr=f, shell=True)
 
 
 log("Installing USB support...")
@@ -205,7 +209,6 @@ child.sendline('df -h')
 try :
   child.expect(DEV_PATH)
   child.expect(PROMPT)
-  log("extroot succeed.")
 except :
   log("No USB partition detected, extroot failed.")
   exit(0)
@@ -227,8 +230,9 @@ else :
   log("Creating sudo group...")
   child.sendline('groupadd --system sudo')
   child.expect(PROMPT)
-  child.sendline('sed -i -e \'s@^#\%sudo.*$@\%sudo ALL=(ALL) NOPASSWD: ALL/\' /etc/sudoers')
-  child.expect(PROMPT)
+
+child.sendline('sed -i -e \'s@^# %sudo.*$@%sudo ALL=(ALL) NOPASSWD: ALL@\' /etc/sudoers')
+child.expect(PROMPT)
 
 
 
@@ -236,7 +240,7 @@ log("Checking user %s..." % (args.user))
 child.sendline('cat /etc/passwd')
 match = child.expect([args.user, PROMPT])
 if match == 0 :
-  log("User %s exists.")
+  log("User %s exists." % (args.user))
   child.expect(PROMPT)
 else :
   log("Creating user %s..." % (args.user))
@@ -248,13 +252,17 @@ else :
   child.expect('password')
   child.sendline(args.userpass)
   child.expect(PROMPT)
-  child.sendline('sed -i -e \'/^%s/ s@:$@:/bin/bash/\' /etc/passwd')
-  child.expect(PROMPT)
-  child.sendline('mkdir -p /home/%s' % (args.user))
-  child.expect(PROMPT)
-  if not args.nosudo :
-    child.sendline('usermod -a -G sudo %s' % (args.user))
-    child.expect(PROMPT)
 
+child.sendline('sed -i -e \'/^%s/ s@:$@:/bin/bash@\' /etc/passwd' % (args.user))
+child.expect(PROMPT)
+child.sendline('mkdir -p /home/%s' % (args.user))
+child.expect(PROMPT)
+if not args.nosudo :
+  child.sendline('usermod -a -G sudo %s' % (args.user))
+  child.expect(PROMPT)
+
+
+log("Done setting up %s. Rebooting..." % (args.hostname))
+child.sendline('reboot')
+child.expect(PROMPT)
 child.kill(0)
-log("Done setting up %s." % (args.hostname))
