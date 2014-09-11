@@ -47,7 +47,7 @@ def log(s) :
   print >>sys.stdout, '[%s] %s' % (dt.now(), s)
 
 
-log("Checking telnet...")
+log("Checking root password...")
 child = pexpect.spawn('telnet %s' % (args.gateway))
 try :
   match = child.expect(['Connection refused', PROMPT])
@@ -56,14 +56,14 @@ try :
   else :
     log("Setting up root password...")
     child.sendline('passwd')
-    child.expect('New password:')
+    child.expect('password')
     child.sendline(args.rootpass)
-    child.expect('Retype password')
+    child.expect('password')
     child.sendline(args.rootpass)
     child.expect(PROMPT)
 
   child.kill(0)
-except :
+except pexpect.TIMEOUT :
   log("telnet timeout. Please check router connection.")
   log(str(child))
   exit(0)
@@ -73,7 +73,7 @@ except :
 log("Checking password-free ssh...")
 child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
 try :
-  match = child.expect([PROMPT, 'password'], timeout=10)
+  match = child.expect([PROMPT, 'password'])
   child.kill(0)
   if match == 0 :
     log("Already have password-free ssh access.");
@@ -111,9 +111,9 @@ log("Making config files...")
 temp_dir = os.path.join(tempfile.mkdtemp(), 'templates')
 shutil.copytree(template_dir, temp_dir)
 try :
-  subprocess.check_call('sed -i -e \'s/%s/%s/g\' %s' % (HOSTNAME_PLACEHOLDER, args.hostname, os.path.join(temp_dir, "etc/config/system")))
-  subprocess.check_call('sed -i -e \'s/%s/%s/g\' %s' % (SSID_PLACEHOLDER, args.ssid, os.path.join(temp_dir, "etc/config/wireless")))
-  subprocess.check_call('sed -i -e \'s/%s/%s/g\' %s' % (PASSWORD_PLACEHOLDER, args.appass, os.path.join(temp_dir, "etc/config/wireless")))
+  subprocess.check_call('sed -i -e \'s@%s@%s@g\' %s' % (HOSTNAME_PLACEHOLDER, args.hostname, os.path.join(temp_dir, "etc/config/system")))
+  subprocess.check_call('sed -i -e \'s@%s@%s@g\' %s' % (SSID_PLACEHOLDER, args.ssid, os.path.join(temp_dir, "etc/config/wireless")))
+  subprocess.check_call('sed -i -e \'s@%s@%s@g\' %s' % (PASSWORD_PLACEHOLDER, args.appass, os.path.join(temp_dir, "etc/config/wireless")))
 except :
   log("Failed to make config file.")
   exit(0)
@@ -144,7 +144,7 @@ log("Checking extroot...")
 child.sendline('df -h')
 match = child.expect([DEV_PATH, PROMPT])
 if match == 0 :
-  log("Already in extroot.")
+  log("Already using extroot.")
 else :
   log("Making ext4 file system...")
   child.sendline('mkfs.ext4 %s' % (DEV_PATH))
@@ -204,11 +204,11 @@ else :
 
 
 
-log("Checking non-privileged user %s..." % (args.user))
+log("Checking user %s..." % (args.user))
 child.sendline('cat /etc/passwd')
 match = child.expect([args.user, PROMPT])
 if match == 0 :
-  log("User %s already exists.")
+  log("User %s exists.")
   child.expect(PROMPT)
 else :
   log("Creating user %s..." % (args.user))
@@ -227,3 +227,6 @@ else :
   if not args.nosudo :
     child.sendline('usermod -a -G sudo %s' % (args.user))
     child.expect(PROMPT)
+
+child.kill(0)
+log("Done setting up %s." % (args.hostname))
