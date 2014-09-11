@@ -77,24 +77,20 @@ def install_packages(session, pkgs) :
 log("Checking root password...")
 child = pexpect.spawn('telnet %s' % (args.gateway))
 try :
-  match = child.expect(['Connection refused', 'unreachable', PROMPT], timeout=10)
-  if match == 1 :
-    log("%s unreachable, check router connection." % (args.gateway))
-    exit(0)
-  elif match == 0 :
-    log("Unable to telnet, assuming you have already set up root's password.")
-  else :
-    log("Setting up root password...")
-    child.sendline('passwd')
-    child.expect('password')
-    child.sendline(args.rootpass)
-    child.expect('password')
-    child.sendline(args.rootpass)
-    child.expect(PROMPT)
+  child.expect(PROMPT)
+  log("Setting up root password...")
+  child.sendline('passwd')
+  child.expect('password')
+  child.sendline(args.rootpass)
+  child.expect('password')
+  child.sendline(args.rootpass)
+  child.expect(PROMPT)
 
   child.kill(0)
+except pexpect.EOF :
+  log("Unable to telnet, assuming you have already set up root's password.")
 except pexpect.TIMEOUT :
-  log("telnet timeout. Please check router connection.")
+  log("%s not reachable. Check router connection.")
   exit(0)
 
 
@@ -160,14 +156,28 @@ install_packages(child, USB_MODULES)
 
 log("Checking %s..." % (DEV_PATH))
 child.sendline('ls -al %s' % (DEV_PATH))
-try :
-  child.expect(DEV_PATH)
+child.expect(PROMPT)
+child.sendline('echo $?')
+match = child.expect(['0', '1'])
+if match == 0 :
+  log("USB disk %s detected.")
+else :
+  log("No USB disk detected, try rebooting...")
+  child.sendline('reboot')
   child.expect(PROMPT)
-  log("USB disk detected.")
-except :
-  log("No USB disk detected. Aborting...")
-  child.kill(0)
-  exit(0)
+  child.kill()
+
+  log("Waiting for router reboot...")
+  child = pexpect.spawn('ping %s' % (args.gateway))
+  try :
+    child.expect('ttl', timeout=30)
+    child.kill(0)
+  except :
+    log("Router still down after 30 seconds. Something is wrong.")
+    exit(0)
+
+  child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
+  child.expect(PROMPT)
 
 
 log("Checking extroot...")
@@ -179,8 +189,8 @@ else :
   log("No extroot detected. Creating...")
   log("Making ext4 file system...")
   child.sendline('mkfs.ext4 %s' % (DEV_PATH))
-  child.expect('Creating journal')
-  child.expect('Writing superblocks')
+  child.expect('Creating journal', timeout=60)
+  child.expect('Writing superblocks', timeout=60)
   child.expect(PROMPT, timeout=60)
   child.sendline('mkdir -p /mnt/usb')
   child.expect(PROMPT)
