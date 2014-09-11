@@ -28,7 +28,7 @@ KEY_FILE_NAME = 'id_isa.pub'
 DEV_PATH = '/dev/sda1'
 
 USB_MODULES = ['kmod-usb-core', 'kmod-usb-ohci', 'kmod-usb-uhci', 'kmod-usb2',
-    'usbutils', 'kmod-usb-storage', 'kmod-fs-ext4', 'kmod-usb-storage-extra',
+    'usbutils', 'kmod-usb-storage', 'kmod-fs-ext4', 'kmod-usb-storage-extras',
     'block-mount', 'e2fsprogs']
 
 EXTRA_MODULES = ['shadow-useradd', 'shadow-groupadd', 'shadow-usermod', 'sudo',
@@ -56,28 +56,67 @@ parser.add_argument('--userpass', required=False, default=DEFAULT_USER_PASS,
     help="Password for non-privilged user")
 parser.add_argument('--nosudo', required=False, action='store_true',
     help="Do not add user to sudo group")
+parser.add_argument('--quiet', required=False, action='store_true',
+    help="Supress verbose output.")
 
 args = parser.parse_args()
 
 def log(s) :
   print >>sys.stdout, '[%s] %s' % (dt.now(), s)
 
+"""
+Send a cmd to ssh session, throw exception if cmd's return code is not 0.
+"""
+def check_call(session, cmd, timeout=60) :
+  session.sendline(cmd)
+  match = session.expect(PROMPT, timeout=timeout)
+  session.sendline('echo $?')
+  match = session.expect(['0', '1'])
+  if match == 1 :
+    raise Exception("%s failed." % (cmd))
+  session.expect(PROMPT)
 
+"""
+Install a list of packages.
+"""
 def install_packages(session, pkgs) :
-  session.sendline('opkg update')
-  match = session.expect(['Failed', PROMPT])
-  if match == 0 :
-    log("opkg update failed. Please check internet connection of router.")
-    exit(0)
-  else :
-    session.sendline('opkg install %s' % (' '.join(pkgs)))
-    session.expect(PROMPT)
+  check_call(session, 'opkg update')
+  check_call(session, 'opkg install %s' % (' '.join(pkgs)))
+
+"""
+Reboot router, resume ssh session after rebooting.
+"""
+def reboot(session) :
+  global args, logfile
+
+  session.sendline('reboot')
+  session.expect(PROMPT)
+  session.kill(0)
+
+  child = pexpect.spawn('ping %s' % (args.gateway))
+  try :
+    child.expect('ttl', timeout=300)
+  except :
+    raise Exception("Router still down after 300 seconds. Something is wrong.")
+
+  child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
+  child.logfile=logfile
+  child.expect(PROMPT, timeout=None)
+  return child
+
+
+
+if args.quiet :
+  logfile = open('/dev/null', 'w')
+else :
+  logfile = sys.stdout
 
 
 log("Checking root password...")
 child = pexpect.spawn('telnet %s' % (args.gateway))
-try :
-  child.expect(PROMPT)
+child.logfile=logfile
+match = child.expect([PROMPT, pexpect.EOF, pexpect.TIMEOUT])
+if match == 0 :
   log("Setting up root password...")
   child.sendline('passwd')
   child.expect('password')
@@ -85,143 +124,108 @@ try :
   child.expect('password')
   child.sendline(args.rootpass)
   child.expect(PROMPT)
-
   child.kill(0)
-except pexpect.EOF :
+elif match == 1 :
   log("Unable to telnet, assuming you have already set up root's password.")
-except pexpect.TIMEOUT :
-  log("%s not reachable. Check router connection.")
-  exit(0)
+else :
+  log(str(child))
+  raise Exception("%s not reachable. Check router connection." % (args.gateway))
 
 
 
 log("Checking password-free ssh...")
 child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
-try :
-  match = child.expect([PROMPT, 'password', 'unreachable'])
-  child.kill(0)
-  if match == 0 :
-    log("Already have password-free ssh access.");
-  else :
-    try :
-      key_file = glob.glob(os.path.expanduser(args.key))[0]
-    except :
-      log("SSH public key file not found: %s" % (args.key))
-      exit(0)
+child.logfile=logfile
+match = child.expect([PROMPT, 'password', pexpect.EOF, pexpect.TIMEOUT])
+if match == 0 :
+  log("Already have password-free ssh access.");
+elif match == 1 :
+  log("Setting up password-free ssh...")
+  try :
+    key_file = glob.glob(os.path.expanduser(args.key))[0]
+  except :
+    log("SSH public key file not found: %s" % (args.key))
+    exit(0)
 
-    log("Copying key file %s ..." % (key_file))
-    child = pexpect.spawn('scp %s %s root@%s:/tmp/%s'
-        % (SSH_ARGS, key_file, args.gateway, KEY_FILE_NAME))
-    child.expect('password')
-    child.sendline(args.rootpass)
-    child.expect(pexpect.EOF)
+  child = pexpect.spawn('scp %s %s root@%s:/tmp/%s'
+      % (SSH_ARGS, key_file, args.gateway, KEY_FILE_NAME))
+  child.logfile=logfile
+  child.expect('password')
+  child.sendline(args.rootpass)
+  child.expect(pexpect.EOF)
 
-    log("Setting up password-free login ...")
-    child = pexpect.spawn('ssh %s root@%s \'cat /tmp/%s > /etc/dropbear/authorized_keys\''
-        % (SSH_ARGS, args.gateway, KEY_FILE_NAME))
-    child.expect('password')
-    child.sendline(args.rootpass)
-    child.expect(pexpect.EOF)
-except :
-  log("ssh timeout.")
+  child = pexpect.spawn('ssh %s root@%s \'cat /tmp/%s > /etc/dropbear/authorized_keys\''
+      % (SSH_ARGS, args.gateway, KEY_FILE_NAME))
+  child.logfile=logfile
+  child.expect('password')
+  child.sendline(args.rootpass)
+  child.expect(pexpect.EOF)
+else :
   log(str(child))
-  exit(0)
+  raise Exception("Unable to ssh. Check router connection.")
 
 
+log("Preparing configuration files...")
 try :
   template_dir = glob.glob(os.path.expanduser(args.template))[0]
 except :
-  log("Template dir not found: %s." % (args.template))
-  exit(0)
+  raise Exception("Template dir not found: %s." % (args.template))
 
-log("Making config files...")
 temp_dir = os.path.join(tempfile.mkdtemp(), 'templates')
 shutil.copytree(template_dir, temp_dir)
 for placeholder, sub, f in zip([HOSTNAME_PLACEHOLDER, SSID_PLACEHOLDER, PASSWORD_PLACEHOLDER],
     [args.hostname, args.ssid, args.appass], ['system', 'wireless', 'wireless']) :
   cmd = 'sed -i -e \'s@%s@%s@g\' %s' % (placeholder, sub, os.path.join(temp_dir, "etc/config/%s" % (f)))
-  subprocess.check_call(cmd , shell=True)
+  if not args.quiet :
+    log(cmd)
+  subprocess.check_call(cmd, stdout=logfile, stderr=logfile, shell=True)
 
 
-log("Overriding configurations files...")
-with open('/dev/null', 'w') as f:
-  subprocess.check_call('scp %s -r %s/* root@%s:/' % (SSH_ARGS, temp_dir, args.gateway),
-      stdout=f, stderr=f, shell=True)
+log("Copying configurations files...")
+subprocess.check_call('scp %s -r %s/* root@%s:/' % (SSH_ARGS, temp_dir, args.gateway),
+      stdout=logfile, stderr=logfile, shell=True)
 
 
 log("Installing USB support...")
 child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
+child.logfile=logfile
 child.expect(PROMPT)
 install_packages(child, USB_MODULES)
 
+
+
 log("Checking %s..." % (DEV_PATH))
-child.sendline('ls -al %s' % (DEV_PATH))
-child.expect(PROMPT)
-child.sendline('echo $?')
-match = child.expect(['0', '1'])
-if match == 0 :
-  log("USB disk %s detected.")
-else :
+try :
+  check_call(child, 'ls -al %s' % (DEV_PATH))
+  log("USB disk %s detected." % (DEV_PATH))
+except :
   log("No USB disk detected, try rebooting...")
-  child.sendline('reboot')
-  child.expect(PROMPT)
-  child.kill()
+  child = reboot(child)
 
-  log("Waiting for router reboot...")
-  child = pexpect.spawn('ping %s' % (args.gateway))
-  try :
-    child.expect('ttl', timeout=30)
-    child.kill(0)
-  except :
-    log("Router still down after 30 seconds. Something is wrong.")
-    exit(0)
 
-  child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
-  child.expect(PROMPT)
 
 
 log("Checking extroot...")
-child.sendline('df -h')
-match = child.expect([DEV_PATH, PROMPT])
-if match == 0 :
+try :
+  check_call(child, 'mount | grep "%s on /overlay"' % (DEV_PATH))
   log("Already using extroot.")
-else :
+except :
   log("No extroot detected. Creating...")
   log("Making ext4 file system...")
-  child.sendline('mkfs.ext4 %s' % (DEV_PATH))
-  child.expect('Creating journal', timeout=60)
-  child.expect('Writing superblocks', timeout=60)
-  child.expect(PROMPT, timeout=60)
-  child.sendline('mkdir -p /mnt/usb')
-  child.expect(PROMPT)
+  check_call(child, 'mkfs.ext4 %s' % (DEV_PATH), timeout=120)
+  check_call('mkdir -p /mnt/usb')
 
   log("Copying existing overlay files...")
-  child.sendline('mount -t ext4 %s /mnt/usb' % (DEV_PATH))
-  child.expect(PROMPT)
-  child.sendline('tar -C /overlay -cvf - . | tar -C /mnt/usb -xf -')
-  child.expect(PROMPT, timeout=60)
+  check_call('mount -t ext4 %s /mnt/usb' % (DEV_PATH))
+  check_call('tar -C /overlay -cvf - . | tar -C /mnt/usb -xf -')
 
-  child.sendline('reboot')
-  child.kill(0)
+  child = reboot(child)
 
-  log("Waiting for router reboot...")
-  child = pexpect.spawn('ping %s' % (args.gateway))
   try :
-    child.expect('ttl', timeout=30)
-    child.kill(0)
+    check_call(child, 'mount | grep "%s on /overlay"' % (DEV_PATH))
   except :
-    log("Router still down after 30 seconds. Something is wrong.")
-    exit(0)
-
-child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
-child.expect(PROMPT)
-child.sendline('df -h')
-try :
-  child.expect(DEV_PATH)
-  child.expect(PROMPT)
-except :
-  log("No USB partition detected, extroot failed.")
-  exit(0)
+    log(str(child))
+    raise Exception("No USB partition detected, extroot failed.")
 
 
 
@@ -231,31 +235,27 @@ install_packages(child, EXTRA_MODULES)
 
 
 log("Checking sudo group...")
-child.sendline('cat /etc/group')
-match = child.expect(['sudo', PROMPT])
-if match == 0 :
+try :
+  check_call(child, 'cat /etc/group | grep "sudo"')
   log("sudo group exists.")
-  child.expect(PROMPT)
-else :
+except :
   log("Creating sudo group...")
-  child.sendline('groupadd --system sudo')
-  child.expect(PROMPT)
+  check_call(child, 'groupadd --system sudo')
 
-child.sendline('sed -i -e \'s@^# %sudo.*$@%sudo ALL=(ALL) NOPASSWD: ALL@\' /etc/sudoers')
-child.expect(PROMPT)
+try :
+  check_call(child, 'sed -i -e \'s@^# %sudo.*$@%sudo ALL=(ALL) NOPASSWD: ALL@\' /etc/sudoers')
+except :
+  pass
 
 
 
 log("Checking user %s..." % (args.user))
-child.sendline('cat /etc/passwd')
-match = child.expect([args.user, PROMPT])
-if match == 0 :
+try :
+  check_call(child, 'cat /etc/passwd | grep "%s"' % (args.user))
   log("User %s exists." % (args.user))
-  child.expect(PROMPT)
-else :
+except :
   log("Creating user %s..." % (args.user))
-  child.sendline('useradd %s' % (args.user))
-  child.expect(PROMPT)
+  check_call(child, 'useradd %s' % (args.user))
   child.sendline('passwd %s' % (args.user))
   child.expect('password')
   child.sendline(args.userpass)
@@ -263,16 +263,17 @@ else :
   child.sendline(args.userpass)
   child.expect(PROMPT)
 
-child.sendline('sed -i -e \'/^%s/ s@:$@:/bin/bash@\' /etc/passwd' % (args.user))
-child.expect(PROMPT)
-child.sendline('mkdir -p /home/%s' % (args.user))
-child.expect(PROMPT)
-if not args.nosudo :
-  child.sendline('usermod -a -G sudo %s' % (args.user))
-  child.expect(PROMPT)
+try :
+  check_call(child, 'sed -i -e \'/^%s/ s@:$@:/bin/bash@\' /etc/passwd' % (args.user))
+  check_call(child, 'mkdir -p /home/%s' % (args.user))
+  if not args.nosudo :
+    check_call(child, 'usermod -a -G sudo %s' % (args.user))
+except :
+  pass
+
 
 
 log("Done setting up %s. Rebooting..." % (args.hostname))
-child.sendline('reboot')
-child.expect(PROMPT)
+child = reboot(child)
 child.kill(0)
+log("Complete.")
