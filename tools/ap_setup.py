@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 import tempfile
 import shutil
 import subprocess
@@ -69,12 +70,12 @@ Send a cmd to ssh session, throw exception if cmd's return code is not 0.
 """
 def check_call(session, cmd, timeout=60) :
   session.sendline(cmd)
-  match = session.expect(PROMPT, timeout=timeout)
+  session.expect(PROMPT, timeout=timeout)
   session.sendline('echo $?')
-  match = session.expect(['0', '1'])
-  if match == 1 :
-    raise Exception("%s failed." % (cmd))
+  match = session.expect(['\r\n0\r\n', '\r\n1\r\n'])
   session.expect(PROMPT)
+  if match == 1 :
+    raise Exception(str(session))
 
 """
 Install a list of packages.
@@ -86,22 +87,27 @@ def install_packages(session, pkgs) :
 """
 Reboot router, resume ssh session after rebooting.
 """
-def reboot(session) :
+def reboot(session, block=True) :
   global args, logfile
 
+  log("Rebooting...")
   session.sendline('reboot')
   session.expect(PROMPT)
   session.kill(0)
 
+  if not block :
+    return
+
+  time.sleep(10)
+
   child = pexpect.spawn('ping %s' % (args.gateway))
-  try :
-    child.expect('ttl', timeout=300)
-  except :
-    raise Exception("Router still down after 300 seconds. Something is wrong.")
+  child.expect('ttl', timeout=300)
+
+  time.sleep(10)
 
   child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
   child.logfile=logfile
-  child.expect(PROMPT, timeout=None)
+  child.expect(PROMPT)
   return child
 
 
@@ -130,6 +136,9 @@ elif match == 1 :
 else :
   log(str(child))
   raise Exception("%s not reachable. Check router connection." % (args.gateway))
+
+
+time.sleep(10)
 
 
 
@@ -165,6 +174,25 @@ else :
   raise Exception("Unable to ssh. Check router connection.")
 
 
+log("Installing USB support...")
+child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
+child.logfile=logfile
+child.expect(PROMPT)
+install_packages(child, USB_MODULES)
+
+
+
+
+log("Checking %s..." % (DEV_PATH))
+try :
+  check_call(child, 'ls -al %s' % (DEV_PATH))
+  log("USB disk %s detected." % (DEV_PATH))
+except :
+  log("No USB disk detected.")
+  child = reboot(child)
+
+
+
 log("Preparing configuration files...")
 try :
   template_dir = glob.glob(os.path.expanduser(args.template))[0]
@@ -180,27 +208,9 @@ for placeholder, sub, f in zip([HOSTNAME_PLACEHOLDER, SSID_PLACEHOLDER, PASSWORD
     log(cmd)
   subprocess.check_call(cmd, stdout=logfile, stderr=logfile, shell=True)
 
-
 log("Copying configurations files...")
 subprocess.check_call('scp %s -r %s/* root@%s:/' % (SSH_ARGS, temp_dir, args.gateway),
       stdout=logfile, stderr=logfile, shell=True)
-
-
-log("Installing USB support...")
-child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
-child.logfile=logfile
-child.expect(PROMPT)
-install_packages(child, USB_MODULES)
-
-
-
-log("Checking %s..." % (DEV_PATH))
-try :
-  check_call(child, 'ls -al %s' % (DEV_PATH))
-  log("USB disk %s detected." % (DEV_PATH))
-except :
-  log("No USB disk detected, try rebooting...")
-  child = reboot(child)
 
 
 
@@ -212,12 +222,12 @@ try :
 except :
   log("No extroot detected. Creating...")
   log("Making ext4 file system...")
-  check_call(child, 'mkfs.ext4 %s' % (DEV_PATH), timeout=120)
-  check_call('mkdir -p /mnt/usb')
+  check_call(child, 'mkfs.ext4 %s' % (DEV_PATH), timeout=300)
+  check_call(child, 'mkdir -p /mnt/usb')
 
   log("Copying existing overlay files...")
-  check_call('mount -t ext4 %s /mnt/usb' % (DEV_PATH))
-  check_call('tar -C /overlay -cvf - . | tar -C /mnt/usb -xf -')
+  check_call(child, 'mount -t ext4 %s /mnt/usb' % (DEV_PATH))
+  check_call(child, 'tar -C /overlay -cvf - . | tar -C /mnt/usb -xf -')
 
   child = reboot(child)
 
@@ -226,6 +236,7 @@ except :
   except :
     log(str(child))
     raise Exception("No USB partition detected, extroot failed.")
+
 
 
 
@@ -273,7 +284,6 @@ except :
 
 
 
-log("Done setting up %s. Rebooting..." % (args.hostname))
-child = reboot(child)
-child.kill(0)
+log("Done setting up %s." % (args.hostname))
+reboot(child, block=False)
 log("Complete.")
