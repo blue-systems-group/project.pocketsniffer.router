@@ -23,7 +23,7 @@ DEFAULT_USER_PASS = 'jinghaos'
 HOSTNAME_PLACEHOLDER = '__hostname__'
 SSID_PLACEHOLDER = '__ssid__'
 PASSWORD_PLACEHOLDER = '__password__'
-PROMPT = '#'
+PROMPT = '[#\$]'
 SSH_ARGS = '-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'
 KEY_FILE_NAME = 'id_isa.pub'
 DEV_PATH = '/dev/sda1'
@@ -33,7 +33,7 @@ USB_MODULES = ['kmod-usb-core', 'kmod-usb-ohci', 'kmod-usb-uhci', 'kmod-usb2',
     'block-mount', 'e2fsprogs']
 
 EXTRA_MODULES = ['shadow-useradd', 'shadow-groupadd', 'shadow-usermod', 'sudo',
-    'sed', 'python', 'vim', 'bash', 'git']
+    'sed', 'python', 'vim', 'bash', 'git', 'net-tools-hostname']
 
 parser = argparse.ArgumentParser()
 
@@ -98,11 +98,13 @@ def reboot(session, block=True) :
   if not block :
     return
 
-  time.sleep(10)
+  # do not ping immediately.
+  time.sleep(20)
 
   child = pexpect.spawn('ping %s' % (args.gateway))
   child.expect('ttl', timeout=300)
 
+  # safety margin.
   time.sleep(10)
 
   child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
@@ -134,11 +136,11 @@ if match == 0 :
 elif match == 1 :
   log("Unable to telnet, assuming you have already set up root's password.")
 else :
-  log(str(child))
-  raise Exception("%s not reachable. Check router connection." % (args.gateway))
+  raise Exception(str(child))
 
 
-time.sleep(10)
+# somehow, after telnet, the router seems need a while to accept ssh requests.
+time.sleep(15)
 
 
 
@@ -170,8 +172,7 @@ elif match == 1 :
   child.sendline(args.rootpass)
   child.expect(pexpect.EOF)
 else :
-  log(str(child))
-  raise Exception("Unable to ssh. Check router connection.")
+  raise Exception(str(child))
 
 
 log("Installing USB support...")
@@ -220,7 +221,7 @@ try :
   check_call(child, 'mount | grep "%s on /overlay"' % (DEV_PATH))
   log("Already using extroot.")
 except :
-  log("No extroot detected. Creating...")
+  log("No extroot detected.")
   log("Making ext4 file system...")
   check_call(child, 'mkfs.ext4 %s' % (DEV_PATH), timeout=300)
   check_call(child, 'mkdir -p /mnt/usb')
@@ -234,8 +235,7 @@ except :
   try :
     check_call(child, 'mount | grep "%s on /overlay"' % (DEV_PATH))
   except :
-    log(str(child))
-    raise Exception("No USB partition detected, extroot failed.")
+    raise Exception(str(child))
 
 
 
@@ -285,5 +285,30 @@ except :
 
 
 log("Done setting up %s." % (args.hostname))
-reboot(child, block=False)
-log("Complete.")
+reboot(child)
+
+
+log("Validating setup...")
+
+log("Checking if user %s can login..." % (args.user))
+child = pexpect.spawn('ssh %s %s@%s' % (SSH_ARGS, args.user, args.gateway))
+try :
+  child.expect('password')
+  child.sendline(args.userpass)
+  child.expect(PROMPT)
+except :
+  raise Exception(str(child))
+
+log("Checking sudo...")
+check_call(child, 'sudo ls /etc')
+
+log("Checking hostname...")
+check_call(child, 'hostname | grep "%s"' % (args.hostname))
+
+log("Checking SSID...")
+check_call(child, 'uci show wireless | grep "%s"' % (args.ssid))
+
+log("Checking password...")
+check_call(child, 'uci show wireless | grep "%s"' % (args.appass))
+
+log("All good. Finish.")
