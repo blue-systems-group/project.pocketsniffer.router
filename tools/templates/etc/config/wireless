@@ -12,7 +12,7 @@ config wifi-iface
 	option mode         'ap'
 	option ssid         '__ssid__'
 	option encryption   'psk2'
-    option key          '__ap_passwd__'
+    option key          '__password__'
 
 config wifi-device 'radio1'
 	option type         'mac80211'
@@ -28,4 +28,4 @@ config wifi-iface
 	option mode         'ap'
 	option ssid         '__ssid__'
 	option encryption   'psk2'
-	option key          '__ap_passwd__'
+    option key          '__password__'
