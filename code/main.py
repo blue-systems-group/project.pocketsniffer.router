@@ -17,9 +17,9 @@ def main() :
   query_task = QueryTask(client_task)
 
   client_task.start()
-  #ap_task.start()
-  #server_task.start()
-  #channel_switch_task.start()
+  ap_task.start()
+  server_task.start()
+  channel_switch_task.start()
   query_task.start()
 
   while True :
