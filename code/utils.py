@@ -121,9 +121,9 @@ def recv_all(sock, buf_size=8192) :
   return ''.join(content)
 
 def get_public_ip():
-  IP_PATTERN = re.compile(r"""inet\saddr:(?P<IP>[\d\.]{7,15})\s*""")
+  IP_PATTERN = re.compile(r"""inet\saddr:(?P<IP>[\d\.]{7,15})\s*""", re.VERBOSE)
   output = subprocess.check_output(['ifconfig', 'eth1'])
-  match = IP_PATTERN.match(output)
+  match = IP_PATTERN.search(output)
   if match is not None:
     return match.group('IP')
   return None
