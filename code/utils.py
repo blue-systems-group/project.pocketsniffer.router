@@ -105,3 +105,19 @@ def get_dhcp_list() :
         client_list[parts[1]] = {"ip": parts[2], "hostname": parts[3]}
 
   return client_list
+
+
+def recv_all(sock, buf_size=8192) :
+  content = []
+  sock.settimeout(30)
+  try :
+    while True :
+      data = sock.recv(buf_size)
+      if len(data) == 0 :
+        break
+      content.append(data)
+  except :
+    pass
+  return ''.join(content)
+
+
