@@ -1,4 +1,5 @@
 import json
+from json import JSONEncoder
 import re
 import socket
 import threading
@@ -6,6 +7,14 @@ import traceback
 
 import utils
 import settings
+
+class Encoder(JSONEncoder):
+
+  def __init__(self):
+    super(Encoder, self).__init__()
+
+  def default(self, o):
+    return o.__dict__
 
 
 """
@@ -57,7 +66,7 @@ class AccessPoint(object):
     return aps
 
   def __str__(self):
-    return str(self.__dict__)
+    return json.dumps(self.__dict__)
 
   def __repr__(self):
     return self.__str__()
@@ -134,7 +143,7 @@ class Station(object):
     return stas.values()
 
   def __str__(self):
-    return str(self.__dict__)
+    return json.dumps(self.__dict__)
 
   def __repr__(self):
     return self.__str__()
@@ -161,7 +170,7 @@ class HandlerThread(threading.Thread):
     self.conn.close()
 
 
-def collect(client_scan=False, client_traffic=False):
+def collect(request):
   result = dict()
 
   utils.log("Collecting neighbor APs...")
@@ -170,21 +179,21 @@ def collect(client_scan=False, client_traffic=False):
   utils.log("Collecting associated clients...")
   result['clients'] = Station.collect('wlan0') + Station.collect('wlan1')
 
-  if client_scan or client_traffic:
-    request = json.dumps({'collectScanResult': client_scan, 'collectTraffic': client_traffic})
-    utils.log("Sending messge: %s" % (request))
+  if request['client_scan'] or request['client_traffic']:
+    msg = json.dumps(request)
+    utils.log("Sending messge: %s" % (msg))
 
     server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_sock.bind((settings.LOCAL_IP, settings.TCP_PORT))
+    server_sock.bind((settings.LOCAL_IP, settings.LOCAL_TCP_PORT))
     server_sock.listen(len(result['clients']))
 
     clients = []
     for c in [c for c in result['clients'] if getattr(c, 'IP', None) is not None]:
       utils.log("Sending to %s (%s)" % (c.MAC, c.IP))
       try:
-        sock = socket.create_connection((c.IP, settings.TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
-        sock.sendall(request)
+        sock = socket.create_connection((c.IP, settings.LOCAL_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
+        sock.sendall(msg)
         sock.close()
       except:
         utils.log("Failed to send to %s (%s)" % (c.MAC, c.IP))
@@ -207,5 +216,43 @@ def collect(client_scan=False, client_traffic=False):
     for t in handler_threads:
       t.join()
 
-
   return result
+
+
+def main():
+  public_ip = utils.get_public_ip()
+  if public_ip is not None:
+    utils.log("Listenning on IP %s" % (public_ip))
+  else:
+    utils.log("Failed to get public ip.")
+    return
+
+  server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+  server_sock.bind((public_ip, settings.PUBLIC_TCP_PORT))
+  server_sock.listen(settings.PUBLIC_BACKLOG)
+
+  while True:
+    conn, addr = server_sock.accept()
+    try:
+      msg = json.loads(utils.recv_all(conn))
+    except:
+      utils.log("Failed to read message.")
+      traceback.print_exc()
+      continue
+
+    utils.log("Got message from %s: %s" % (addr, json.dumps(msg)))
+    
+    reply = collect(msg)
+    try:
+      sock = socket.create_connection(addr, settings.CONNECTION_TIMEOUT_SEC*1000)
+      sock.sendall(Encoder().encode(reply))
+      sock.close()
+    except:
+      utils.log("Failed to send reply back.")
+      traceback.print_exc()
+      continue
+
+
+if __name__ == '__main__':
+  main()
