@@ -1,4 +1,5 @@
 import json
+import sys
 import re
 import socket
 import threading
@@ -226,9 +227,16 @@ class Collector(RequestHandler):
 
       clients = dict((c.MAC, c) for c in clients)
 
+      utils.log("Waiting for response...")
+
       handler_threads = []
       for i in range(0, len(clients)):
-        conn, addr = server_sock.accept()
+        try:
+          conn, addr = server_sock.accept()
+        except KeyboardInterrupt:
+          server_sock.close()
+          sys.exit()
+
         t = HandlerThread(conn, clients)
         t.start()
         handler_threads.append(t)
