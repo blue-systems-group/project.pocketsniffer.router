@@ -33,7 +33,7 @@ USB_MODULES = ['kmod-usb-core', 'kmod-usb-ohci', 'kmod-usb-uhci', 'kmod-usb2',
     'block-mount', 'e2fsprogs']
 
 EXTRA_MODULES = ['shadow-useradd', 'shadow-groupadd', 'shadow-usermod', 'sudo',
-    'sed', 'python', 'vim', 'bash', 'git', 'net-tools-hostname']
+    'sed', 'python', 'vim', 'bash', 'git', 'net-tools-hostname', 'uhttpd']
 
 parser = argparse.ArgumentParser()
 
@@ -242,6 +242,15 @@ except :
 
 log("Installing packages...")
 install_packages(child, EXTRA_MODULES)
+
+
+log("Creating test files...")
+try:
+  check_call(child, 'mkdir -p /srv/www/downloads')
+  check_call(child, 'dd if=/dev/zero of=/srv/www/downloads/test-10M.bin bs=1M count=10')
+  check_call(child, 'dd if=/dev/zero of=/srv/www/downloads/test-100M.bin bs=1M count=100')
+except:
+  raise Exception(str(child))
 
 
 
