@@ -1,7 +1,4 @@
-#!/usr/bin/python
-
 import json
-from json import JSONEncoder
 import re
 import socket
 import threading
@@ -9,22 +6,14 @@ import traceback
 
 import utils
 import settings
-
-class Encoder(JSONEncoder):
-
-  def __init__(self):
-    super(Encoder, self).__init__()
-
-  def default(self, o):
-    return o.__dict__
+from common import Result
 
 
-"""
-Scan result entry.
-
-Collected from the output of `iw wlan0 scan`.
-"""
 class AccessPoint(object):
+  """Scan result entry.
+
+  Collected from the output of `iw wlan0 scan`.
+  """
 
   IW_SCAN_PATTERNS = {
       'SSID': re.compile(r"""^SSID:\s(?P<SSID>.*)$""", re.MULTILINE),
@@ -41,6 +30,8 @@ class AccessPoint(object):
 
   @classmethod
   def single_create(cls, lines):
+    """Create one scan result entry.
+    """
     ap = AccessPoint()
     output = '\n'.join([l.strip() for l in lines])
     for attr, pattern in cls.IW_SCAN_PATTERNS.items() :
@@ -50,7 +41,7 @@ class AccessPoint(object):
 
     # fix utilizations, convert xx/255 to float
     if ap.utilization is not None:
-      ap.utilization = float(ap.utilization.split('/')[0]) / float(ap.utilization.split('/')[1])
+      ap.utilization = int(1000*float(ap.utilization.split('/')[0]) / float(ap.utilization.split('/')[1]))/1000.0
 
     return ap
 
@@ -76,13 +67,13 @@ class AccessPoint(object):
 
 
 
-"""
-Devices that associate with this AP.
-
-Collected from `iw wlan0 station dump`. Extra information, such as client's scan
-results and traffic condition may also be available.
-"""
 class Station(object):
+  """Devices that associate with this AP.
+
+  Collected from `iw wlan0 station dump`. Extra information, such as client's scan
+  results and traffic condition may also be available.
+  """
+
 
   IW_STATION_DUMP_PATTERNS = {
       'MAC': re.compile(r"""^Station\s(?P<MAC>[:\w]{17})\s\(on\swlan\d\)$""", re.MULTILINE),
@@ -102,8 +93,6 @@ class Station(object):
 
   def __init__(self):
     [setattr(self, attr, None) for attr in Station.IW_STATION_DUMP_PATTERNS.keys()]
-
-
 
   def set_scan_results(self, iw_scan_output):
     aps = AccessPoint.bulk_create(iw_scan_output.split('\n'))
@@ -127,7 +116,6 @@ class Station(object):
   def bulk_create(cls, lines):
     index = [i for i in xrange(0, len(lines)) if lines[i].startswith('Station ')] + [len(lines)]
     return [Station.single_create(lines[i:j]) for i, j in zip(index[:-1], index[1:])]
-
 
   @classmethod
   def collect(cls, iface='wlan0'):
@@ -154,107 +142,97 @@ class Station(object):
 
 
 class HandlerThread(threading.Thread):
+  """ Handler thread for replies from clients.
+  """
 
-  def __init__(self, clients, conn):
+  def __init__(self, conn, client):
     super(HandlerThread, self).__init__()
-    self.clients = clients
     self.conn = conn
+    self.client = client
 
   def run(self):
-    reply = json.loads(utils.recv_all(self.conn))
-    client = self.clients[reply['mac']]
-    utils.log("Got reply from %s (%s)" % (client.MAC, client.IP))
     try:
-      client.set_scan_results(reply['scanResult']['output'])
-      client.set_traffic(reply['traffic'])
+      self.conn.settimeout(settings.READ_TIMEOUT_SEC)
+      reply = json.loads(utils.recv_all(self.conn))
+      self.conn.close()
     except:
-      pass
-    self.conn.close()
+      utils.log("Failed to decode client reply.")
+      traceback.print_exc(settings.LOG_FILE)
+      return
 
-
-def collect(request):
-  result = dict()
-
-  utils.log("Collecting neighbor APs...")
-  result['neighbor_aps'] = AccessPoint.collect('wlan0') + AccessPoint.collect('wlan1')
-
-  utils.log("Collecting associated clients...")
-  result['clients'] = Station.collect('wlan0') + Station.collect('wlan1')
-
-  if request['client_scan'] or request['client_traffic']:
-    msg = json.dumps(request)
-    utils.log("Sending messge: %s" % (msg))
-
-    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_sock.bind((settings.LOCAL_IP, settings.LOCAL_TCP_PORT))
-    server_sock.listen(len(result['clients']))
-
-    clients = []
-    for c in [c for c in result['clients'] if getattr(c, 'IP', None) is not None]:
-      utils.log("Sending to %s (%s)" % (c.MAC, c.IP))
-      try:
-        sock = socket.create_connection((c.IP, settings.LOCAL_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
-        sock.sendall(msg)
-        sock.close()
-      except:
-        utils.log("Failed to send to %s (%s)" % (c.MAC, c.IP))
-        traceback.print_exc()
-      else:
-        clients.append(c)
-
-    clients = dict((c.MAC, c) for c in clients)
-
-    handler_threads = []
-
-    utils.log("Waiting for replies...")
-    for i in range(0, len(clients)):
-      conn, addr = server_sock.accept()
-      t = HandlerThread(clients, conn)
-      t.start()
-      handler_threads.append(t)
-
-    utils.log("Waiting for handler threads to finish.")
-    for t in handler_threads:
-      t.join()
-
-  return result
-
-
-def main():
-  public_ip = utils.get_public_ip()
-  if public_ip is not None:
-    utils.log("Listenning on IP %s" % (public_ip))
-  else:
-    utils.log("Failed to get public ip.")
-    return
-
-  server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-  server_sock.bind((public_ip, settings.PUBLIC_TCP_PORT))
-  server_sock.listen(settings.PUBLIC_BACKLOG)
-
-  while True:
-    conn, addr = server_sock.accept()
+    utils.log("Got reply from %s (%s)" % (self.client.MAC, self.client.IP))
     try:
-      msg = json.loads(utils.recv_all(conn))
+      if 'scan_result' in reply:
+        self.client.set_scan_results(reply['scanResult']['output'])
+      if 'traffic' in reply:
+        self.client.set_traffic(reply['traffic'])
     except:
-      utils.log("Failed to read message.")
-      traceback.print_exc()
-      continue
+      utils.log("Failed to set scan results or traffic.")
+      traceback.print_exc(settings.LOG_FILE)
 
-    utils.log("Got message from %s: %s" % (addr, json.dumps(msg)))
-    
-    reply = collect(msg)
+
+
+class CollectorResult(Result):
+
+  def __init__(self, request):
+    super(CollectorResult, self).__init__(request)
+    for attr in ['neighbor_aps', 'clients']:
+      setattr(self, attr, None)
+
+
+
+class Collector(threading.Thread):
+  """Main collector thread that handles requests from central controller.
+  """
+
+  def __init__(self, conn, request):
+    super(Collector,self).__init__()
+    self.conn = conn
+    self.request = request
+
+  def run(self):
+    reply = self.collect(self.request)
     try:
-      sock = socket.create_connection(addr, settings.CONNECTION_TIMEOUT_SEC*1000)
-      sock.sendall(Encoder().encode(reply))
-      sock.close()
+      utils.log("Sending reply to %s." % (str(self.conn.getpeername())))
+      self.conn.sendall(utils.Encoder().encode(reply))
+      self.conn.close()
     except:
       utils.log("Failed to send reply back.")
-      traceback.print_exc()
-      continue
+      traceback.print_exc(settings.LOG_FILE)
 
 
-if __name__ == '__main__':
-  main()
+  def collect(self, request):
+    """Collect data from clients.
+    """
+    result = CollectorResult(request)
+
+    utils.log("Collecting neighbor APs...")
+    result.neighbor_aps = AccessPoint.collect('wlan0') + AccessPoint.collect('wlan1')
+    utils.log("%d neighbor APs found." % (len(result.neighbor_aps)))
+
+    utils.log("Collecting associated clients...")
+    result.clients = Station.collect('wlan0') + Station.collect('wlan1')
+    utils.log("%d client stations found." % (len(result.clients)))
+
+    if request['client_scan'] or request['client_traffic']:
+      msg = json.dumps(request)
+      utils.log("Sending messge: %s" % (msg))
+
+      handler_threads = []
+      for c in [c for c in result.clients if getattr(c, 'IP', None) is not None]:
+        utils.log("Sending to %s (%s)" % (c.MAC, c.IP))
+        try:
+          conn = socket.create_connection((c.IP, settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
+          conn.sendall(msg)
+          t = HandlerThread(conn, c)
+          t.start()
+          handler_threads.append(t)
+        except:
+          utils.log("Failed to send to %s (%s)" % (c.MAC, c.IP))
+          traceback.print_exc(settings.LOG_FILE)
+
+      utils.log("Waiting for handler threads to finish.")
+      for t in handler_threads:
+        t.join()
+
+    return result

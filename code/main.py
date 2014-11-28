@@ -1,29 +1,51 @@
 #!/usr/bin/python
 
-import time
+import socket
+import json
+import traceback
+
+import utils
+import settings
+
+from collector import Collector
 
 
-from client import ClientTask
-from ap import APTask
-from server import ServerTask
-from channel import ChannelSwitchTask
-from query import QueryTask
 
 def main() :
-  client_task = ClientTask()
-  ap_task = APTask()
-  server_task = ServerTask(client_task)
-  channel_switch_task = ChannelSwitchTask(client_task, ap_task)
-  query_task = QueryTask(client_task)
+  public_ip = utils.get_public_ip()
 
-  client_task.start()
-  ap_task.start()
-  server_task.start()
-  channel_switch_task.start()
-  query_task.start()
+  if public_ip is not None:
+    utils.log("Collector created on IP %s" % (public_ip))
+  else:
+    utils.log("Failed to get public IP.")
+    return
 
-  while True :
-    time.sleep(100000)
+  server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+  server_sock.bind((public_ip, settings.PUBLIC_TCP_PORT))
+  server_sock.listen(settings.PUBLIC_BACKLOG)
+
+  utils.log("Listening on %s (%d)..." % (public_ip, settings.PUBLIC_TCP_PORT))
+
+  while True:
+    conn, addr = server_sock.accept()
+    try:
+      request = json.loads(utils.recv_all(conn))
+    except:
+      utils.log("Failed to read message.")
+      traceback.print_exc(settings.LOG_FILE)
+      continue
+
+    utils.log("Got message from %s: %s" % (addr, json.dumps(request)))
+
+    if 'action' not in request:
+      utils.log("No action specified. Ignoring...")
+      continue
+
+    if request['action'] == 'collect':
+      utils.log("Starting collector thread.")
+      Collector(conn, request).start()
+ 
 
 if __name__ == '__main__' :
   main()

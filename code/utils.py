@@ -1,4 +1,7 @@
 import os, subprocess, time, re
+import settings
+from json import JSONEncoder
+from datetime import datetime as dt
 
 def channel2freq(channel) :
   if channel >=1 and channel <= 11 :
@@ -64,7 +67,7 @@ def set_txpower(txpower, is_5g=False) :
 
 
 def log(str) :
-  print("[" + time.strftime('%c') + "] " + str)
+  print >>settings.LOG_FILE, "[" + time.strftime('%c') + "] " + str
 
 def scan(iface='wlan0'):
   args = ['iw', 'dev', iface, 'scan']
@@ -127,5 +130,19 @@ def get_public_ip():
   if match is not None:
     return match.group('IP')
   return None
+
+
+
+class Encoder(JSONEncoder):
+
+  def __init__(self):
+    super(Encoder, self).__init__()
+
+  def default(self, o):
+    if isinstance(o, dt):
+      return o.isoformat()
+    elif isinstance(o, float):
+      return format(o, '.3f')
+    return o.__dict__
 
 

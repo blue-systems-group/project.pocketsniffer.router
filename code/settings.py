@@ -1,3 +1,5 @@
+import sys
+
 STATION_DUMP_INTERVAL_SEC = 60
 AP_SCAN_INTERVAL_SEC = 6000
 CHANNEL_SWITCH_INTERVAL_SEC = 30
@@ -14,10 +16,26 @@ DEFAULT_RECV_BUF = 16*1024
 
 UDP_PORT = 8000
 
+"""IP and port for listening client reply.
+"""
 LOCAL_IP = '192.168.1.1'
 LOCAL_TCP_PORT = 6543
+
+
 BUF_SIZE = 65536
-CONNECTION_TIMEOUT_SEC = 30
+CONNECTION_TIMEOUT_SEC = 60
+READ_TIMEOUT_SEC = 900
+
+"""port for listening controller collector requests.
+"""
+DEFAULT_COLLECTOR_PORT = 7654
+
+"""client port
+"""
+CLIENT_TCP_PORT = 6543
 
 PUBLIC_TCP_PORT = 7654
 PUBLIC_BACKLOG = 10
+
+
+LOG_FILE = sys.stdout
