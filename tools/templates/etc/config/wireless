@@ -5,6 +5,7 @@ config wifi-device 'radio0'
 	option path         'platform/ar934x_wmac'
     option htmode       'HT20'
 	option disabled     '0'
+    option txpower      '10'
 
 config wifi-iface
 	option device       'radio0'
@@ -21,6 +22,7 @@ config wifi-device 'radio1'
 	option path         'pci0000:00/0000:00:00.0'
     option htmode       HT20
 	option disabled     '0'
+    option txpower      10
 
 config wifi-iface
 	option device       'radio1'
