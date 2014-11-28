@@ -99,7 +99,7 @@ config rule
 config rule
 	option src wan
 	option proto tcp
-	option dest_port ssh
+	option dest_port 22
 	option target ACCEPT
 
 # include a file with users custom iptables rules
