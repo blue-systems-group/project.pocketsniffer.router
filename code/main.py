@@ -8,6 +8,7 @@ import utils
 import settings
 
 from collector import Collector
+from executor import Executor
 
 
 
@@ -45,6 +46,11 @@ def main() :
     if request['action'] == 'collect':
       utils.log("Starting collector thread.")
       Collector(conn, request).start()
+
+    if request['action'] == 'execute':
+      utils.log("Starting Exectutor thread.")
+      Executor(conn, request).start()
+
  
 
 if __name__ == '__main__' :

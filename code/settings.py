@@ -23,7 +23,7 @@ LOCAL_TCP_PORT = 6543
 
 
 BUF_SIZE = 65536
-CONNECTION_TIMEOUT_SEC = 60
+CONNECTION_TIMEOUT_SEC = 10
 READ_TIMEOUT_SEC = 900
 
 """port for listening controller collector requests.
@@ -39,3 +39,8 @@ PUBLIC_BACKLOG = 10
 
 
 LOG_FILE = sys.stdout
+
+
+VALID_CHANNELS = range(1, 12) + range(36, 49, 4) + range(149, 166, 4)
+VALID_TXPOWER_2GHZ = range(1, 31)
+VALID_TXPOWER_5GHZ = range(1, 18)

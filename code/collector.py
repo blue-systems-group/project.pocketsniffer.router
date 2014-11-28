@@ -6,7 +6,7 @@ import traceback
 
 import utils
 import settings
-from common import Result
+from common import Result, RequestHandler
 
 
 class AccessPoint(object):
@@ -145,10 +145,10 @@ class HandlerThread(threading.Thread):
   """ Handler thread for replies from clients.
   """
 
-  def __init__(self, conn, client):
+  def __init__(self, conn, clients):
     super(HandlerThread, self).__init__()
     self.conn = conn
-    self.client = client
+    self.clients = clients
 
   def run(self):
     try:
@@ -160,12 +160,14 @@ class HandlerThread(threading.Thread):
       traceback.print_exc(settings.LOG_FILE)
       return
 
-    utils.log("Got reply from %s (%s)" % (self.client.MAC, self.client.IP))
+    client = self.clients[reply['mac']]
+
+    utils.log("Got reply from %s (%s)" % (client.MAC, client.IP))
     try:
       if 'scan_result' in reply:
-        self.client.set_scan_results(reply['scanResult']['output'])
+        client.set_scan_results(reply['scanResult']['output'])
       if 'traffic' in reply:
-        self.client.set_traffic(reply['traffic'])
+        client.set_traffic(reply['traffic'])
     except:
       utils.log("Failed to set scan results or traffic.")
       traceback.print_exc(settings.LOG_FILE)
@@ -181,27 +183,14 @@ class CollectorResult(Result):
 
 
 
-class Collector(threading.Thread):
+class Collector(RequestHandler):
   """Main collector thread that handles requests from central controller.
   """
 
   def __init__(self, conn, request):
-    super(Collector,self).__init__()
-    self.conn = conn
-    self.request = request
+    super(Collector,self).__init__(conn, request)
 
-  def run(self):
-    reply = self.collect(self.request)
-    try:
-      utils.log("Sending reply to %s." % (str(self.conn.getpeername())))
-      self.conn.sendall(utils.Encoder().encode(reply))
-      self.conn.close()
-    except:
-      utils.log("Failed to send reply back.")
-      traceback.print_exc(settings.LOG_FILE)
-
-
-  def collect(self, request):
+  def handle(self, request):
     """Collect data from clients.
     """
     result = CollectorResult(request)
@@ -218,18 +207,32 @@ class Collector(threading.Thread):
       msg = json.dumps(request)
       utils.log("Sending messge: %s" % (msg))
 
-      handler_threads = []
+      server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+      server_sock.bind((settings.LOCAL_IP, settings.LOCAL_TCP_PORT))
+      server_sock.listen(settings.DEFAULT_BACKLOG)
+
+      clients = []
       for c in [c for c in result.clients if getattr(c, 'IP', None) is not None]:
         utils.log("Sending to %s (%s)" % (c.MAC, c.IP))
         try:
           conn = socket.create_connection((c.IP, settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
           conn.sendall(msg)
-          t = HandlerThread(conn, c)
-          t.start()
-          handler_threads.append(t)
+          conn.close()
+          clients.append(c)
         except:
           utils.log("Failed to send to %s (%s)" % (c.MAC, c.IP))
           traceback.print_exc(settings.LOG_FILE)
+
+      clients = dict((c.MAC, c) for c in clients)
+
+      handler_threads = []
+      for i in range(0, len(clients)):
+        conn, addr = server_sock.accept()
+        t = HandlerThread(conn, clients)
+        t.start()
+        handler_threads.append(t)
+
 
       utils.log("Waiting for handler threads to finish.")
       for t in handler_threads:

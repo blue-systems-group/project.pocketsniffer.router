@@ -1,7 +1,11 @@
-import os, subprocess, time, re
-import settings
+import subprocess
+import time
+import re
 from json import JSONEncoder
 from datetime import datetime as dt
+
+import settings
+
 
 def channel2freq(channel) :
   if channel >=1 and channel <= 11 :
@@ -20,50 +24,67 @@ def freq2channel(freq) :
   else :
     raise Exception("Invalid frequency %d" % (freq))
 
-def get_current_channel() :
-  args = ['uci', 'show', 'wireless.radio0.channel']
+
+def get_channel(is_5g=False) :
+  if is_5g:
+    radio = 'radio1'
+  else:
+    radio = 'radio0'
+  args = ['uci', 'show', 'wireless.%s.channel' % (radio)]
   output = subprocess.check_output(args)
   return int(output.split('=')[1])
 
-def set_channel(channel) :
 
-  if channel <= 0 :
-    log("Invalid channel %d" % (channel))
-    return
+def set_channel(channel) :
+  if channel not in settings.VALID_CHANNELS:
+    raise Exception("Invalid channel %d" % (channel))
+
+  if channel <= 11:
+    radio = 'radio0'
+    iface = 'wlan0'
+  else:
+    radio = 'radio1'
+    iface = 'wlan1'
 
   # do not use the wifi command to switch channel, but still maintain the
   # channel coheraence of the configuration file
-
-  args = ['uci', 'set']
-
-  if channel <= 11 :
-    args.append('wireless.radio0.channel=' + str(channel))
-  else :
-    args.append('wireless.radio1.channel=' + str(channel))
-
+  args = ['uci', 'set', 'wireless.%s.channel=%d' % (radio, channel)]
   subprocess.call(args)
   subprocess.call(['uci', 'commit'])
 
   # this is the command that actually switches channel
+  args = ['hostapd_cli', '-i', iface, 'chan_switch', '1', str(channel2freq(channel)), 'ht']
+  subprocess.call(args)
 
-  with open(os.devnull, 'wb') as f :
-    cmd = 'chan_switch 1 ' + str(channel2freq(channel)) + '\n'
-    p = subprocess.Popen('hostapd_cli', stdin=subprocess.PIPE, stdout=f, stderr=f)
-    p.stdin.write(cmd)
-    time.sleep(3)
-    p.kill()
 
-def set_txpower(txpower, is_5g=False) :
-  args = ['uci', 'set']
+def set_txpower(txpower_dbm, is_5g=False) :
+  if not is_5g:
+    radio = 'radio0'
+    phy = 'phy0'
+    if txpower_dbm not in settings.VALID_TXPOWER_2GHZ:
+      raise Exception("Invalid txpowr: %d" % (txpower_dbm))
+  else:
+    radio = 'radio1'
+    phy = 'phy1'
+    if txpower_dbm not in settings.VALID_TXPOWER_5GHZ:
+      raise Exception("Invalid txpowr: %d" % (txpower_dbm))
 
-  if is_5g is True :
-    args.append('wireless.radio1.txpower=' + str(txpower))
-  else :
-    args.append('wireless.radio0.txpower=' + str(txpower))
-
+  args = ['uci', 'set', 'wireless.%s.txpower=%d' % (radio, txpower_dbm)]
   subprocess.call(args)
   subprocess.call(['uci', 'commit'])
-  subprocess.call(['wifi', 'reload'])
+
+  args = ['iw', phy, 'set', 'txpower', 'fixed', str(txpower_dbm*100)]
+  subprocess.call(args)
+
+
+def get_txpower(is_5g=False):
+  if is_5g:
+    radio = 'radio1'
+  else:
+    radio = 'radio0'
+  args = ['uci', 'show', 'wireless.%s.txpower' % (radio)]
+  output = subprocess.check_output(args)
+  return int(output.split('=')[1])
 
 
 def log(str) :
