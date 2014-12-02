@@ -44,3 +44,5 @@ LOG_FILE = sys.stdout
 VALID_CHANNELS = range(1, 12) + range(36, 49, 4) + range(149, 166, 4)
 VALID_TXPOWER_2GHZ = range(1, 31)
 VALID_TXPOWER_5GHZ = range(1, 18)
+
+HTTP_PORT = 8080

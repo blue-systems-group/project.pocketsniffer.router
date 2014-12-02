@@ -2,6 +2,8 @@
 
 import socket
 import json
+
+import BaseHTTPServer
 import traceback
 
 import utils
@@ -9,6 +11,7 @@ import settings
 
 from collector import Collector
 from executor import Executor
+from throughput import ThroughputHandler
 
 
 
@@ -20,6 +23,10 @@ def main() :
   else:
     utils.log("Failed to get public IP.")
     return
+
+  utils.log("Starting HTTP server at port %d" % (settings.HTTP_PORT))
+  httpd = BaseHTTPServer.HTTPServer(('', settings.HTTP_PORT), ThroughputHandler)
+  httpd.serve_forever()
 
   server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
   server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
