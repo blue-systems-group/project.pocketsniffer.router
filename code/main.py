@@ -56,8 +56,7 @@ def main() :
       if request['action'] == 'execute':
         utils.log("Starting Exectutor thread.")
         Executor(conn, request).start()
-  except KeyboardInterrupt:
-    utils.log("Ctrl-C detected. Exiting.")
+  except:
     utils.log("Closing server socket.")
     server_sock.close()
     utils.log("Shutting down HTTP server.")
