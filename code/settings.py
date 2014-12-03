@@ -1,48 +1,35 @@
 import sys
 
-STATION_DUMP_INTERVAL_SEC = 60
-AP_SCAN_INTERVAL_SEC = 6000
-CHANNEL_SWITCH_INTERVAL_SEC = 30
-QUERY_INTERVAL_SEC = 60
-
-TRAFFIC_THRESHOLD = 1024*1024
-
-TRAFFIC_AGE_THRESHOLD = 3*60
-
-DEFAULT_GATEWAY = '192.168.1.1'
-DEFAULT_PORT = 1688
-DEFAULT_BACKLOG = 32
-DEFAULT_RECV_BUF = 16*1024
-
-UDP_PORT = 8000
-
-"""IP and port for listening client reply.
-"""
+"""IP and port for listening client reply."""
 LOCAL_IP = '192.168.1.1'
 LOCAL_TCP_PORT = 6543
+LOCAL_BACKLOG = 10
+
+"""The port that pocketsniffer app listens on."""
+CLIENT_TCP_PORT = 6543
 
 
-BUF_SIZE = 65536
+"""Parameters for socket connection/read."""
+BUF_SIZE = 64*1024
 CONNECTION_TIMEOUT_SEC = 10
 READ_TIMEOUT_SEC = 900
 
-"""port for listening controller collector requests.
-"""
-DEFAULT_COLLECTOR_PORT = 7654
-
-"""client port
-"""
-CLIENT_TCP_PORT = 6543
-
+"""Port for listening controller collector requests."""
 PUBLIC_TCP_PORT = 7654
 PUBLIC_BACKLOG = 10
+
+"""Port for client throughput test."""
+HTTP_PORT = 8080
 
 
 LOG_FILE = sys.stdout
 
 
-VALID_CHANNELS = range(1, 12) + range(36, 49, 4) + range(149, 166, 4)
-VALID_TXPOWER_2GHZ = range(1, 31)
-VALID_TXPOWER_5GHZ = range(1, 18)
+"""Hardware specs."""
+VALID_2GHZ_CHANNELS = range(1, 12)
+VALID_5GHZ_CHANNELS = range(36, 49, 4) + range(149, 166, 4)
+VALID_CHANNELS = VALID_2GHZ_CHANNELS + VALID_5GHZ_CHANNELS
 
-HTTP_PORT = 8080
+VALID_2GHZ_TXPOWER_DBM = range(1, 31)
+VALID_5GHZ_TXPOWER_DBM = range(1, 18)
+VALID_TXPOWER_DBM = set(VALID_2GHZ_TXPOWER_DBM + VALID_5GHZ_TXPOWER_DBM)

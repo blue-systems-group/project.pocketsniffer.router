@@ -31,8 +31,7 @@ class AccessPoint(object):
 
   @classmethod
   def single_create(cls, lines):
-    """Create one scan result entry.
-    """
+    """Create one scan result entry."""
     ap = AccessPoint()
     output = '\n'.join([l.strip() for l in lines])
     for attr, pattern in cls.IW_SCAN_PATTERNS.items() :
@@ -72,7 +71,8 @@ class Station(object):
   """Devices that associate with this AP.
 
   Collected from `iw wlan0 station dump`. Extra information, such as client's scan
-  results and traffic condition may also be available.
+  results and traffic condition may also be available if clients provide such
+  information.
   """
 
 
@@ -143,8 +143,7 @@ class Station(object):
 
 
 class HandlerThread(threading.Thread):
-  """ Handler thread for replies from clients.
-  """
+  """ Handler thread for replies from clients."""
 
   def __init__(self, conn, clients):
     super(HandlerThread, self).__init__()
@@ -185,15 +184,13 @@ class CollectorResult(Result):
 
 
 class Collector(RequestHandler):
-  """Main collector thread that handles requests from central controller.
-  """
+  """Main collector thread that handles requests from central controller."""
 
   def __init__(self, conn, request):
     super(Collector,self).__init__(conn, request)
 
   def handle(self, request):
-    """Collect data from clients.
-    """
+    """Collect data from clients."""
     result = CollectorResult(request)
 
     utils.log("Collecting neighbor APs...")
@@ -211,7 +208,7 @@ class Collector(RequestHandler):
       server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
       server_sock.bind((settings.LOCAL_IP, settings.LOCAL_TCP_PORT))
-      server_sock.listen(settings.DEFAULT_BACKLOG)
+      server_sock.listen(settings.LOCAL_BACKLOG)
 
       clients = []
       for c in [c for c in result.clients if getattr(c, 'IP', None) is not None]:

@@ -26,63 +26,53 @@ def freq2channel(freq) :
 
 
 def get_channel(is_5g=False) :
-  if is_5g:
-    radio = 'radio1'
-  else:
-    radio = 'radio0'
-  args = ['uci', 'show', 'wireless.%s.channel' % (radio)]
+  """Get current channel."""
+  idx = 1 if is_5g else 0
+  args = ['uci', 'show', 'wireless.radio%d.channel' % (idx)]
   output = subprocess.check_output(args)
   return int(output.split('=')[1])
 
 
 def set_channel(channel) :
+  """Set current channel."""
   if channel not in settings.VALID_CHANNELS:
     raise Exception("Invalid channel %d" % (channel))
 
-  if channel <= 11:
-    radio = 'radio0'
-    iface = 'wlan0'
-  else:
-    radio = 'radio1'
-    iface = 'wlan1'
+  idx = 0 if channel in settings.VALID_2GHZ_CHANNELS else 1
 
   # do not use the wifi command to switch channel, but still maintain the
   # channel coheraence of the configuration file
-  args = ['uci', 'set', 'wireless.%s.channel=%d' % (radio, channel)]
-  subprocess.call(args)
-  subprocess.call(['uci', 'commit'])
+  args = ['uci', 'set', 'wireless.radio%d.channel=%d' % (idx, channel)]
+  subprocess.check_call(args)
+  subprocess.check_call(['uci', 'commit'])
 
   # this is the command that actually switches channel
-  args = ['hostapd_cli', '-i', iface, 'chan_switch', '1', str(channel2freq(channel)), 'ht']
-  subprocess.call(args)
+  args = ['hostapd_cli', '-i', 'wlan%d' % (idx), 'chan_switch', '1', str(channel2freq(channel)), 'ht']
+  subprocess.check_call(args)
 
 
 def set_txpower(txpower_dbm, is_5g=False) :
+  """Set transmission power."""
+  idx = 0 if not is_5g else 1
+
   if not is_5g:
-    radio = 'radio0'
-    phy = 'phy0'
-    if txpower_dbm not in settings.VALID_TXPOWER_2GHZ:
-      raise Exception("Invalid txpowr: %d" % (txpower_dbm))
+    if txpower_dbm not in settings.VALID_2GHZ_TXPOWER_DBM:
+      raise Exception("Invalid txpowr (%d dBm) for " % (txpower_dbm))
   else:
-    radio = 'radio1'
-    phy = 'phy1'
-    if txpower_dbm not in settings.VALID_TXPOWER_5GHZ:
+    if txpower_dbm not in settings.VALID_5GHZ_TXPOWER_DBM:
       raise Exception("Invalid txpowr: %d" % (txpower_dbm))
 
-  args = ['uci', 'set', 'wireless.%s.txpower=%d' % (radio, txpower_dbm)]
-  subprocess.call(args)
-  subprocess.call(['uci', 'commit'])
+  args = ['uci', 'set', 'wireless.radio%d.txpower=%d' % (idx, txpower_dbm)]
+  subprocess.check_call(args)
+  subprocess.check_call(['uci', 'commit'])
 
-  args = ['iw', phy, 'set', 'txpower', 'fixed', str(txpower_dbm*100)]
-  subprocess.call(args)
+  args = ['iw', 'phy%d' % (idx), 'set', 'txpower', 'fixed', str(txpower_dbm*100)]
+  subprocess.check_call(args)
 
 
 def get_txpower(is_5g=False):
-  if is_5g:
-    radio = 'radio1'
-  else:
-    radio = 'radio0'
-  args = ['uci', 'show', 'wireless.%s.txpower' % (radio)]
+  idx = 0 if not is_5g else 1
+  args = ['uci', 'show', 'wireless.radio%d.txpower' % (idx)]
   output = subprocess.check_output(args)
   return int(output.split('=')[1])
 
@@ -100,43 +90,13 @@ def station_dump(iface='wlan0'):
   return subprocess.check_output(args)
 
 
-def get_station_info() :
-  args = ['iw', 'wlan0', 'station', 'dump']
-  output = subprocess.check_output(args)
-  sta_num = output.count('Station')
-  lines = output.split('\n')
-
-  stations = dict()
-
-  for i in xrange(0, sta_num) :
-    base = i*18
-    mac = lines[base+0].split()[1]
-    info = dict()
-    info['mac'] = mac
-    info['rx_bytes'] = int(lines[base+2].split()[2])
-    info['tx_bytes'] = int(lines[base+4].split()[2])
-    info['signal'] = int(lines[base+8].split()[1])
-    stations[mac] = info
-
-  return stations
-
-def get_dhcp_list() :
-  client_list = dict()
-  with open('/var/dhcp.leases') as f :
-    for line in f.readlines() :
-      parts = line.split()
-      if len(parts) == 5 :
-        client_list[parts[1]] = {"ip": parts[2], "hostname": parts[3]}
-
-  return client_list
-
-
-def recv_all(sock, buf_size=8192) :
+def recv_all(sock) :
+  """Read as many as bytes from socket."""
   content = []
-  sock.settimeout(30)
+  sock.settimeout(settings.READ_TIMEOUT_SEC*1000)
   try :
     while True :
-      data = sock.recv(buf_size)
+      data = sock.recv(settings.BUF_SIZE)
       if len(data) == 0 :
         break
       content.append(data)
@@ -144,13 +104,16 @@ def recv_all(sock, buf_size=8192) :
     pass
   return ''.join(content)
 
+
 def get_public_ip():
+  """Get WAN IP from ifconfig command output."""
   IP_PATTERN = re.compile(r"""inet\saddr:(?P<IP>[\d\.]{7,15})\s*""", re.VERBOSE)
   output = subprocess.check_output(['ifconfig', 'eth1'])
   match = IP_PATTERN.search(output)
   if match is not None:
     return match.group('IP')
-  return None
+  else:
+    return None
 
 
 
@@ -165,5 +128,3 @@ class Encoder(JSONEncoder):
     elif isinstance(o, float):
       return format(o, '.3f')
     return o.__dict__
-
-
