@@ -36,8 +36,11 @@ class HttpServerThread(threading.Thread):
     super(HttpServerThread, self).__init__()
     self.addr = addr
     self.port = port
+    self.httpd = BaseHTTPServer.HTTPServer((self.addr, self.port), ThroughputHandler)
 
   def run(self):
     utils.log("Starting HTTP server at port %d" % (self.port))
-    httpd = BaseHTTPServer.HTTPServer((self.addr, self.port), ThroughputHandler)
-    httpd.serve_forever()
+    self.httpd.serve_forever()
+
+  def shutdown(self):
+    self.httpd.shutdown()

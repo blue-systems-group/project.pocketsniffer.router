@@ -78,7 +78,7 @@ def get_txpower(is_5g=False):
 
 
 def log(str) :
-  print >>settings.LOG_FILE, "[" + time.strftime('%c') + "] " + str
+  print >>settings.LOG_FILE, "\r[" + time.strftime('%c') + "] " + str
 
 def scan(iface='wlan0'):
   args = ['iw', 'dev', iface, 'scan']
