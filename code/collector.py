@@ -19,9 +19,9 @@ class AccessPoint(object):
   IW_SCAN_PATTERNS = {
       'SSID': re.compile(r"""^SSID:\s(?P<SSID>.*)$""", re.MULTILINE),
       'BSSID': re.compile(r"""^BSS\s(?P<BSSID>[:\w]{17})\(on\swlan\d\)$""", re.MULTILINE),
-      'channel': re.compile(r"""^freq:\s(?P<channel>\d{4})$""", re.MULTILINE),
-      'signal': re.compile(r"""^signal:\s(?P<signal>[-\d]*?)\.00 dBm$""", re.MULTILINE),
-      'client_num': re.compile(r"""^\*\sstation\scount:\s(?P<client_num>\d*)$""", re.MULTILINE),
+      'frequency': re.compile(r"""^freq:\s(?P<frequency>\d{4})$""", re.MULTILINE),
+      'level': re.compile(r"""^signal:\s(?P<level>[-\d]*?)\.00 dBm$""", re.MULTILINE),
+      'clientNum': re.compile(r"""^\*\sstation\scount:\s(?P<clientNum>\d*)$""", re.MULTILINE),
       'utilization': re.compile(r"""^\*\schannel\sutili[sz]ation:\s(?P<utilization>\d*\/\d*)$""", re.MULTILINE),
       }
 
@@ -78,16 +78,16 @@ class Station(object):
 
   IW_STATION_DUMP_PATTERNS = {
       'MAC': re.compile(r"""^Station\s(?P<MAC>[:\w]{17})\s\(on\swlan\d\)$""", re.MULTILINE),
-      'inactive_time': re.compile(r"""^inactive\stime:\s*(?P<inactive_time>\d*)\sms$""", re.MULTILINE),
-      'rx_bytes': re.compile(r"""^rx\sbytes:\s*(?P<rx_bytes>\d*)$""", re.MULTILINE),
-      'rx_packets': re.compile(r"""^rx\spackets:\s*(?P<rx_packets>\d*)$""", re.MULTILINE),
-      'tx_bytes': re.compile(r"""^tx\sbytes:\s*(?P<tx_bytes>\d*)$""", re.MULTILINE),
-      'tx_packets': re.compile(r"""^tx\spackets:\s*(?P<tx_packets>\d*)$""", re.MULTILINE),
-      'tx_retries': re.compile(r"""^tx\sretries:\s*(?P<tx_retries>\d*)$""", re.MULTILINE),
-      'tx_failed': re.compile(r"""^tx\sfailed:\s*(?P<tx_failed>\d*)$""", re.MULTILINE),
-      'signal_avg': re.compile(r"""^signal\savg:\s*(?P<signal_avg>-\d*).*$""", re.MULTILINE),
-      'tx_bitrate': re.compile(r"""^tx\sbitrate:\s*(?P<tx_bitrate>[\d\.]*).*$""", re.MULTILINE),
-      'rx_bitrate': re.compile(r"""^rx\sbitrate:\s*(?P<rx_bitrate>[\d\.]*).*$""", re.MULTILINE),
+      'inactiveTime': re.compile(r"""^inactive\stime:\s*(?P<inactiveTime>\d*)\sms$""", re.MULTILINE),
+      'rxBytes': re.compile(r"""^rx\sbytes:\s*(?P<rxBytes>\d*)$""", re.MULTILINE),
+      'rxPackets': re.compile(r"""^rx\spackets:\s*(?P<rxPackets>\d*)$""", re.MULTILINE),
+      'txBytes': re.compile(r"""^tx\sbytes:\s*(?P<txBytes>\d*)$""", re.MULTILINE),
+      'txPackets': re.compile(r"""^tx\spackets:\s*(?P<txPackets>\d*)$""", re.MULTILINE),
+      'txRetries': re.compile(r"""^tx\sretries:\s*(?P<txRetries>\d*)$""", re.MULTILINE),
+      'txFailed': re.compile(r"""^tx\sfailed:\s*(?P<txFailed>\d*)$""", re.MULTILINE),
+      'signalAvg': re.compile(r"""^signal\savg:\s*(?P<signalAvg>-\d*).*$""", re.MULTILINE),
+      'txBitrate': re.compile(r"""^tx\sbitrate:\s*(?P<txBitrate>[\d\.]*).*$""", re.MULTILINE),
+      'rxBitrate': re.compile(r"""^rx\sbitrate:\s*(?P<rxBitrate>[\d\.]*).*$""", re.MULTILINE),
       }
 
   DHCP_LEASES_PATTERNS = re.compile(r"""^\d*\s(?P<MAC>[:\w]{17})\s(?P<IP>[\d\.]{7,15})\s(?P<hostname>[\w-]*?)\s.*$""", re.MULTILINE)
@@ -95,9 +95,18 @@ class Station(object):
   def __init__(self):
     [setattr(self, attr, None) for attr in Station.IW_STATION_DUMP_PATTERNS.keys()]
 
-  def set_scan_results(self, iw_scan_output):
-    aps = AccessPoint.bulk_create(iw_scan_output.split('\n'))
-    setattr(self, 'scan_result', aps)
+  def set_scan_results(self, results):
+    if results['detailed']:
+      aps = AccessPoint.bulk_create(results['output'].split('\n'))
+    else:
+      aps = []
+      for r in results['results']:
+        ap = AccessPoint()
+        for attr in ['SSID', 'BSSID', 'frequency', 'level']:
+          setattr(ap, attr, r[attr])
+        aps.append(ap)
+
+    setattr(self, 'scanResult', aps)
 
   def set_traffic(self, traffic):
     setattr(self, 'traffic', traffic)
@@ -164,8 +173,8 @@ class HandlerThread(threading.Thread):
 
     utils.log("Got reply from %s (%s)" % (client.MAC, client.IP))
     try:
-      if 'scan_result' in reply:
-        client.set_scan_results(reply['scanResult']['output'])
+      if 'scanResult' in reply:
+        client.set_scan_results(reply['scanResult'])
       if 'traffic' in reply:
         client.set_traffic(reply['traffic'])
     except:
@@ -178,7 +187,7 @@ class CollectorResult(Result):
 
   def __init__(self, request):
     super(CollectorResult, self).__init__(request)
-    for attr in ['neighbor_aps', 'clients']:
+    for attr in ['neighborAPs', 'clients']:
       setattr(self, attr, None)
 
 
@@ -194,14 +203,14 @@ class Collector(RequestHandler):
     result = CollectorResult(request)
 
     utils.log("Collecting neighbor APs...")
-    result.neighbor_aps = AccessPoint.collect('wlan0') + AccessPoint.collect('wlan1')
-    utils.log("%d neighbor APs found." % (len(result.neighbor_aps)))
+    result.neighborAPs = AccessPoint.collect('wlan0') + AccessPoint.collect('wlan1')
+    utils.log("%d neighbor APs found." % (len(result.neighborAPs)))
 
     utils.log("Collecting associated clients...")
     result.clients = Station.collect('wlan0') + Station.collect('wlan1')
     utils.log("%d client stations found." % (len(result.clients)))
 
-    if request['client_scan'] or request['client_traffic']:
+    if request['clientScan'] or request['clientTraffic']:
       msg = json.dumps(request)
       utils.log("Sending messge: %s" % (msg))
 

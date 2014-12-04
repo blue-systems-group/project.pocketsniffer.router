@@ -12,7 +12,7 @@ CLIENT_TCP_PORT = 6543
 """Parameters for socket connection/read."""
 BUF_SIZE = 64*1024
 CONNECTION_TIMEOUT_SEC = 10
-READ_TIMEOUT_SEC = 900
+READ_TIMEOUT_SEC = 10
 
 """Port for listening controller collector requests."""
 PUBLIC_TCP_PORT = 7654

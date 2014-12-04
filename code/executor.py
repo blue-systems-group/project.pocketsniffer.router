@@ -9,7 +9,7 @@ class ExecutorResult(Result):
 
   def __init__(self, request):
     super(ExecutorResult, self).__init__(request)
-    for attr in ['channel_2g', 'channel_5g', 'txpower_2g', 'txpower_5g']:
+    for attr in ['channel2', 'channel5', 'txPower2', 'txPower5']:
       setattr(self, attr, None)
 
 
@@ -39,12 +39,12 @@ class Executor(RequestHandler):
         utils.log("Failed to set txpower.")
         traceback.print_exc(settings.LOG_FILE)
 
-    result.channel_2g = utils.get_channel(False)
-    result.channel_5g = utils.get_channel(True)
-    utils.log("Current channel: 2GHz %d, 5GHz %d." % (result.channel_2g, result.channel_5g))
+    result.channel2 = utils.get_channel(False)
+    result.channel5 = utils.get_channel(True)
+    utils.log("Current channel: 2GHz %d, 5GHz %d." % (result.channel2, result.channel5))
 
-    result.txpower_2g = utils.get_txpower(False)
-    result.txpower_5g = utils.get_txpower(True)
-    utils.log("Current txpower: 2GHz %d, 5GHz %d." % (result.txpower_2g, result.txpower_5g))
+    result.txPower2 = utils.get_txpower(False)
+    result.txPower5 = utils.get_txpower(True)
+    utils.log("Current txpower: 2GHz %d, 5GHz %d." % (result.txPower2, result.txPower5))
 
     return result
