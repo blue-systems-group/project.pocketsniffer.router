@@ -173,6 +173,11 @@ class HandlerThread(threading.Thread):
 
     utils.log("Got reply from %s (%s)" % (client.MAC, client.IP))
     try:
+      if 'isPhoneLabPhone' in reply:
+        setattr(client, 'isPhoneLabPhone', reply['isPhoneLabPhone'])
+      else:
+        setattr(client, 'isPhoneLabPhone', False)
+
       if 'scanResult' in reply:
         client.set_scan_results(reply['scanResult'])
       if 'traffic' in reply:
