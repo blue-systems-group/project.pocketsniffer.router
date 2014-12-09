@@ -32,33 +32,35 @@ USB_MODULES = ['kmod-usb-core', 'kmod-usb-ohci', 'kmod-usb-uhci', 'kmod-usb2',
     'usbutils', 'kmod-usb-storage', 'kmod-fs-ext4', 'kmod-usb-storage-extras',
     'block-mount', 'e2fsprogs']
 
-EXTRA_MODULES = ['shadow-useradd', 'shadow-groupadd', 'shadow-usermod', 'sudo',
-    'sed', 'python', 'vim', 'bash', 'git', 'net-tools-hostname', 'uhttpd']
+EXTRA_MODULES = [
+'shadow-useradd',
+'shadow-groupadd',
+'shadow-usermod',
+'sudo',
+'python',
+'vim',
+'bash',
+'git',
+'net-tools-hostname'
+'iwinfo',
+'hostapd-utils',
+]
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--hostname', required=True, help="Hostname")
 
-parser.add_argument('--key', required=False, default=DEFAULT_KEY,
-    help="Public key file for ssh.")
-parser.add_argument('--ssid', required=False, default=DEFAULT_SSID,
-    help="AP SSID")
-parser.add_argument('--rootpass', required=False, default=DEFAULT_ROOT_PASSWORD,
-    help="Root password")
-parser.add_argument('--appass', required=False, default=DEFAULT_AP_PASSWORD,
-    help="AP password")
-parser.add_argument('--gateway', required=False, default=DEFAULT_GATEWAY,
-    help="AP gateway")
-parser.add_argument('--template', required=False, default=DEFAULT_TEMPLATE_DIR,
-    help="Configuration templates")
-parser.add_argument('--user', required=False, default=DEFAULT_USER_NAME,
-    help="Non-privileged user to create.")
-parser.add_argument('--userpass', required=False, default=DEFAULT_USER_PASS,
-    help="Password for non-privilged user")
-parser.add_argument('--nosudo', required=False, action='store_true',
-    help="Do not add user to sudo group")
-parser.add_argument('--quiet', required=False, action='store_true',
-    help="Supress verbose output.")
+parser.add_argument('--key', default=DEFAULT_KEY, help="Public key file for ssh.")
+parser.add_argument('--ssid',  default=DEFAULT_SSID, help="AP SSID")
+parser.add_argument('--clonemac', type=str, help="MAC address to clone")
+parser.add_argument('--rootpass', default=DEFAULT_ROOT_PASSWORD, help="Root password")
+parser.add_argument('--appass', default=DEFAULT_AP_PASSWORD, help="AP password")
+parser.add_argument('--gateway', default=DEFAULT_GATEWAY, help="AP gateway")
+parser.add_argument('--template', default=DEFAULT_TEMPLATE_DIR, help="Configuration templates")
+parser.add_argument('--user', default=DEFAULT_USER_NAME, help="Non-privileged user to create.")
+parser.add_argument('--userpass', default=DEFAULT_USER_PASS, help="Password for non-privilged user")
+parser.add_argument('--nosudo', action='store_true', help="Do not add user to sudo group")
+parser.add_argument('--quiet', action='store_true', help="Supress verbose output.")
 
 args = parser.parse_args()
 
@@ -175,10 +177,20 @@ else :
   raise Exception(str(child))
 
 
+if args.clonemac:
+  log("Setting up MAC clone...")
+  check_call(child, 'uci set network.wan.macaddr=%s' % args.clonemac)
+  check_call(child, 'uci commit')
+  check_call(child, 'ifdown wan && ifup wan')
+
+
 log("Installing USB support...")
 child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
 child.logfile=logfile
 child.expect(PROMPT)
+
+
+
 install_packages(child, USB_MODULES)
 
 
@@ -242,16 +254,6 @@ except :
 
 log("Installing packages...")
 install_packages(child, EXTRA_MODULES)
-
-
-log("Creating test files...")
-try:
-  check_call(child, 'mkdir -p /srv/www/downloads')
-  check_call(child, 'dd if=/dev/zero of=/srv/www/downloads/test-10M.bin bs=1M count=10')
-  check_call(child, 'dd if=/dev/zero of=/srv/www/downloads/test-100M.bin bs=1M count=100')
-except:
-  raise Exception(str(child))
-
 
 
 log("Checking sudo group...")
