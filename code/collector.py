@@ -10,144 +10,105 @@ import settings
 from common import Result, RequestHandler
 
 
-class AccessPoint(object):
-  """Scan result entry.
-
-  Collected from the output of `iw wlan0 scan`.
-  """
-
-  IW_SCAN_PATTERNS = {
-      'SSID': re.compile(r"""^SSID:\s(?P<SSID>.*)$""", re.MULTILINE),
-      'BSSID': re.compile(r"""^BSS\s(?P<BSSID>[:\w]{17})\(on\swlan\d\)$""", re.MULTILINE),
-      'frequency': re.compile(r"""^freq:\s(?P<frequency>\d{4})$""", re.MULTILINE),
-      'level': re.compile(r"""^signal:\s(?P<level>[-\d]*?)\.00 dBm$""", re.MULTILINE),
-      'clientNum': re.compile(r"""^\*\sstation\scount:\s(?P<clientNum>\d*)$""", re.MULTILINE),
-      'utilization': re.compile(r"""^\*\schannel\sutili[sz]ation:\s(?P<utilization>\d*\/\d*)$""", re.MULTILINE),
-      }
+IW_SCAN_PATTERNS = {
+    'SSID': re.compile(r"""^SSID:\s(?P<SSID>.*)$""", re.MULTILINE),
+    'BSSID': re.compile(r"""^BSS\s(?P<BSSID>[:\w]{17})\(on\swlan\d\)$""", re.MULTILINE),
+    'frequency': re.compile(r"""^freq:\s(?P<frequency>\d{4})$""", re.MULTILINE),
+    'RSSI': re.compile(r"""^signal:\s(?P<RSSI>[-\d]*?)\.00 dBm$""", re.MULTILINE),
+    'stationCount': re.compile(r"""^\*\sstation\scount:\s(?P<stationCount>\d*)$""", re.MULTILINE),
+    'bssLoad': re.compile(r"""^\*\schannel\sutili[sz]ation:\s(?P<bssLoad>\d*\/\d*)$""", re.MULTILINE),
+    }
 
 
-  def __init__(self):
-    [setattr(self, attr, None) for attr in AccessPoint.IW_SCAN_PATTERNS.keys()]
 
-  @classmethod
-  def single_create(cls, lines):
-    """Create one scan result entry."""
-    ap = AccessPoint()
-    output = '\n'.join([l.strip() for l in lines])
-    for attr, pattern in cls.IW_SCAN_PATTERNS.items() :
-      match = pattern.search(output)
+def parse_iw_scan(output):
+  """ Parse the output of `iw iface scan`, and return a list of scanResultEntry. """
+  lines = output.split('\n')
+  index = [i for i in xrange(0, len(lines)) if lines[i].startswith('BSS ')] + [len(lines)]
+  results = []
+  for i, j in zip(index[:-1], index[1:]):
+    s = '\n'.join([l.strip() for l in lines[i:j]])
+    r = dict()
+    for name, pattern in IW_SCAN_PATTERNS.items():
+      match = pattern.search(s)
       if match is not None:
-        setattr(ap, attr, match.group(attr))
-
-    # fix utilizations, convert xx/255 to float
-    if ap.utilization is not None:
-      ap.utilization = int(1000*float(ap.utilization.split('/')[0]) / float(ap.utilization.split('/')[1]))/1000.0
-
-    return ap
-
-  @classmethod
-  def bulk_create(cls, lines):
-    index = [i for i in xrange(0, len(lines)) if lines[i].startswith('BSS ')] + [len(lines)]
-    return [AccessPoint.single_create(lines[i:j]) for i, j in zip(index[:-1], index[1:])]
-
-  @classmethod
-  def collect(cls, iface='wlan0'):
-    aps = cls.bulk_create(utils.scan(iface).split('\n'))
-
-    for ap in aps:
-      setattr(ap, 'iface', iface)
-    return aps
-
-  def __str__(self):
-    return json.dumps(self.__dict__)
-
-  def __repr__(self):
-    return self.__str__()
+        r[name] = match.group(name)
+    for name in ['frequency', 'RSSI', 'stationCount']:
+      r[name] = int(r[name])
+    if 'bssLoad' in r:
+      r['bssLoad'] = int(1000*eval('1.0*%s' % (r['bssLoad'])))/1000.0
+    results.append(r)
+  return results
 
 
+IWINFO_PATTERNS = {
+    'BSSID': re.compile(r"""Access\sPoint:\s(?P<BSSID>[:\w]{17})$""", re.MULTILINE),
+    'SSID': re.compile(r"""ESSID:\s"(?P<SSID>.*)"$""", re.MULTILINE),
+    'channel': re.compile(r"""Channel:\s(?P<channel>\d+)""", re.MULTILINE),
+    'txPower': re.compile(r"""Tx-Power:\s(?P<txPower>\d+)""", re.MULTILINE),
+    'signal': re.compile(r"""Signal:\s(?P<signal_dbm>[-\d]+)""", re.MULTILINE),
+    'noise': re.compile(r"""Noise:\s(?P<noise_dbm>[-\d]+)""", re.MULTILINE),
+    }
 
 
-class Station(object):
-  """Devices that associate with this AP.
+def parse_iwinfo(output):
+  """ Parse the output of `iwinfo iface info`, return dict of information. """ 
+  info = dict()
+  for name, pattern in IWINFO_PATTERNS.items():
+    match = pattern.search(output)
+    if match is not None:
+      info[name] = match.group(name)
+  for name in ['channel', 'txPower', 'signal', 'noise']:
+    info[name] = int(info[name])
+  return info
 
-  Collected from `iw wlan0 station dump`. Extra information, such as client's scan
-  results and traffic condition may also be available if clients provide such
-  information.
-  """
+
+IW_STATION_DUMP_PATTERNS = {
+    'MAC': re.compile(r"""^Station\s(?P<MAC>[:\w]{17})\s\(on\swlan\d\)$""", re.MULTILINE),
+    'inactiveTime': re.compile(r"""^inactive\stime:\s*(?P<inactiveTime>\d*)\sms$""", re.MULTILINE),
+    'rxBytes': re.compile(r"""^rx\sbytes:\s*(?P<rxBytes>\d*)$""", re.MULTILINE),
+    'rxPackets': re.compile(r"""^rx\spackets:\s*(?P<rxPackets>\d*)$""", re.MULTILINE),
+    'txBytes': re.compile(r"""^tx\sbytes:\s*(?P<txBytes>\d*)$""", re.MULTILINE),
+    'txPackets': re.compile(r"""^tx\spackets:\s*(?P<txPackets>\d*)$""", re.MULTILINE),
+    'txFailures': re.compile(r"""^tx\sfailed:\s*(?P<txFailures>\d*)$""", re.MULTILINE),
+    'txRetries': re.compile(r"""^tx\sretries:\s*(?P<txRetries>\d*)$""", re.MULTILINE),
+    'avgSignal': re.compile(r"""^signal\savg:\s*(?P<avgSignal>-\d*).*$""", re.MULTILINE),
+    'txBitrate': re.compile(r"""^tx\sbitrate:\s*(?P<txBitrate>[\d\.]*).*$""", re.MULTILINE),
+    'rxBitrate': re.compile(r"""^rx\sbitrate:\s*(?P<rxBitrate>[\d\.]*).*$""", re.MULTILINE),
+    }
 
 
-  IW_STATION_DUMP_PATTERNS = {
-      'MAC': re.compile(r"""^Station\s(?P<MAC>[:\w]{17})\s\(on\swlan\d\)$""", re.MULTILINE),
-      'inactiveTime': re.compile(r"""^inactive\stime:\s*(?P<inactiveTime>\d*)\sms$""", re.MULTILINE),
-      'rxBytes': re.compile(r"""^rx\sbytes:\s*(?P<rxBytes>\d*)$""", re.MULTILINE),
-      'rxPackets': re.compile(r"""^rx\spackets:\s*(?P<rxPackets>\d*)$""", re.MULTILINE),
-      'txBytes': re.compile(r"""^tx\sbytes:\s*(?P<txBytes>\d*)$""", re.MULTILINE),
-      'txPackets': re.compile(r"""^tx\spackets:\s*(?P<txPackets>\d*)$""", re.MULTILINE),
-      'txRetries': re.compile(r"""^tx\sretries:\s*(?P<txRetries>\d*)$""", re.MULTILINE),
-      'txFailed': re.compile(r"""^tx\sfailed:\s*(?P<txFailed>\d*)$""", re.MULTILINE),
-      'signalAvg': re.compile(r"""^signal\savg:\s*(?P<signalAvg>-\d*).*$""", re.MULTILINE),
-      'txBitrate': re.compile(r"""^tx\sbitrate:\s*(?P<txBitrate>[\d\.]*).*$""", re.MULTILINE),
-      'rxBitrate': re.compile(r"""^rx\sbitrate:\s*(?P<rxBitrate>[\d\.]*).*$""", re.MULTILINE),
-      }
-
-  DHCP_LEASES_PATTERNS = re.compile(r"""^\d*\s(?P<MAC>[:\w]{17})\s(?P<IP>[\d\.]{7,15})\s(?P<hostname>[\w-]*?)\s.*$""", re.MULTILINE)
-
-  def __init__(self):
-    [setattr(self, attr, None) for attr in Station.IW_STATION_DUMP_PATTERNS.keys()]
-
-  def set_scan_results(self, results):
-    if results['detailed']:
-      aps = AccessPoint.bulk_create(results['output'].split('\n'))
-    else:
-      aps = []
-      for r in results['results']:
-        ap = AccessPoint()
-        for attr in ['SSID', 'BSSID', 'frequency', 'level']:
-          setattr(ap, attr, r[attr])
-        aps.append(ap)
-
-    setattr(self, 'scanResult', aps)
-
-  def set_traffic(self, traffic):
-    setattr(self, 'traffic', traffic)
-
-  @classmethod
-  def single_create(cls, lines):
-    sta = Station()
-    output = '\n'.join([l.strip() for l in lines])
-    for attr, pattern in cls.IW_STATION_DUMP_PATTERNS.items():
-      match = pattern.search(output)
+def parse_iw_station_dump(output):
+  """ Parse the output of `iw iface station dump`, return dict of information. """ 
+  lines = output.split('\n')
+  index = [i for i in xrange(0, len(lines)) if lines[i].startswith('Station ')] + [len(lines)]
+  stations = []
+  for i, j in zip(index[:-1], index[1:]):
+    s = '\n'.join([l.strip() for l in lines[i:j]])
+    t = dict()
+    for name, pattern in IW_STATION_DUMP_PATTERNS.items():
+      match = pattern.search(s)
       if match is not None:
-        setattr(sta, attr, match.group(attr))
+        t[name] = match.group(name)
+    for name in t.keys():
+      if name != 'MAC':
+        t[name] = int(t[name])
+    stations.append(t)
+  return stations
 
-    return sta
 
-  @classmethod
-  def bulk_create(cls, lines):
-    index = [i for i in xrange(0, len(lines)) if lines[i].startswith('Station ')] + [len(lines)]
-    return [Station.single_create(lines[i:j]) for i, j in zip(index[:-1], index[1:])]
+DHCP_LEASES_PATTERNS = re.compile(r"""^\d*\s(?P<MAC>[:\w]{17})\s(?P<IP>[\d\.]{7,15})\s(?P<hostname>[\w-]*?)\s.*$""", re.MULTILINE)
+def parse_dhcp_leases():
+  """ Parse /var/dhcp.leases, return MAC->IP mapping. """
+  s = dict()
+  with open('/var/dhcp.leases') as f :
+    for line in f.readlines():
+      match = DHCP_LEASES_PATTERNS.match(line)
+      if match is not None:
+        s[match.group['MAC']] = match.group('IP')
+  return s
 
-  @classmethod
-  def collect(cls, iface='wlan0'):
-    stas = dict((sta.MAC, sta) for sta in cls.bulk_create(utils.station_dump(iface).split('\n')))
-
-    for sta in stas.values():
-      setattr(sta, 'iface', iface)
-
-    with open('/var/dhcp.leases') as f :
-      for line in f.readlines():
-        match = Station.DHCP_LEASES_PATTERNS.match(line)
-        if match is not None and match.group('MAC') in stas:
-          [setattr(stas[match.group('MAC')], attr, match.group(attr)) for attr in ['hostname', 'IP']]
-
-    return stas.values()
-
-  def __str__(self):
-    return json.dumps(self.__dict__)
-
-  def __repr__(self):
-    return self.__str__()
-
+ 
 
 
 
@@ -188,22 +149,10 @@ class HandlerThread(threading.Thread):
 
 
 
-class CollectorResult(Result):
-
-  def __init__(self, request):
-    super(CollectorResult, self).__init__(request)
-    for attr in ['neighborAPs', 'clients']:
-      setattr(self, attr, None)
-
-
-
-class Collector(RequestHandler):
+class CollectHandler(RequestHandler):
   """Main collector thread that handles requests from central controller."""
 
-  def __init__(self, conn, request):
-    super(Collector,self).__init__(conn, request)
-
-  def handle(self, request):
+  def handle(self):
     """Collect data from clients."""
     result = CollectorResult(request)
 

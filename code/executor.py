@@ -1,6 +1,9 @@
 import traceback
+import socket
+import json
 
 from common import Result, RequestHandler
+from collector import Station
 import utils
 import settings
 
@@ -38,6 +41,31 @@ class Executor(RequestHandler):
       except:
         utils.log("Failed to set txpower.")
         traceback.print_exc(settings.LOG_FILE)
+
+    if 'assoc' in request:
+      utils.log("Making %s associate to %s" % (request['client'], request['assoc']))
+
+      ip = None
+      with open('/var/dhcp.leases') as f :
+        for line in f.readlines():
+          match = Station.DHCP_LEASES_PATTERNS.match(line)
+          if match is not None and match.group('MAC') == request['client']:
+            ip = match.group('IP')
+            utils.log("Found client %s" % (ip))
+            break
+
+      if ip is None:
+        utils.log("No client with MAC %s" % (request['client']))
+      else:
+        try:
+          conn = socket.create_connection((ip, settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
+          conn.sendall(json.dumps(request))
+          conn.close()
+        except:
+          utils.log("Failed to send to %s (%s)" % (request['client'], ip))
+          traceback.print_exc(settings.LOG_FILE)
+
+
 
     result.channel2 = utils.get_channel(False)
     result.channel5 = utils.get_channel(True)
