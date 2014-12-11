@@ -41,7 +41,7 @@ EXTRA_MODULES = [
 'vim',
 'bash',
 'git',
-'net-tools-hostname'
+'net-tools-hostname',
 'iwinfo',
 'hostapd-utils',
 ]
