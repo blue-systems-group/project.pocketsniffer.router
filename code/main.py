@@ -2,19 +2,17 @@
 
 import socket
 import json
-import sys
 import logging
 
-import traceback
 
-from jonschema import validate
+from jsonschema import validate
 
 import utils
 import settings
 
 
 from collector import CollectHandler
-from executor import Executor
+from executor import APConfigHandler, ClientReasocHandler
 from throughput import HttpServerThread
 
 logger = logging.getLogger('pocketsniffer')
@@ -23,13 +21,11 @@ HANDLER_MAPPING = {
     'collect': CollectHandler,
     'apConfig': APConfigHandler,
     'clientReassoc': ClientReasocHandler,
-    'clientMeasure': ClientMeasureHander,
     }
 
 
 def main() :
-
-  public_ip = utils.get_public_ip()
+  public_ip = utils.get_wan_ip()
 
   if public_ip is not None:
     logger.debug("Public IP is %s" % (public_ip))

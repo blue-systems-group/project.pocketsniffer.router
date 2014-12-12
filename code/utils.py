@@ -77,9 +77,6 @@ def get_txpower(is_5g=False):
   return int(output.split('=')[1])
 
 
-def log(str) :
-  print >>settings.LOG_FILE, "\r[" + time.strftime('%c') + "] " + str
-
 def scan(iface='wlan0'):
   args = ['iw', 'dev', iface, 'scan']
   return subprocess.check_output(args)
@@ -105,13 +102,24 @@ def recv_all(sock) :
   return ''.join(content)
 
 
-def get_public_ip():
+IP_PATTERN = re.compile(r"""inet\saddr:(?P<IP>[\d\.]{7,15})\s*""", re.VERBOSE)
+def get_wan_ip():
   """Get WAN IP from ifconfig command output."""
-  IP_PATTERN = re.compile(r"""inet\saddr:(?P<IP>[\d\.]{7,15})\s*""", re.VERBOSE)
   output = subprocess.check_output(['ifconfig', 'eth1'])
   match = IP_PATTERN.search(output)
   if match is not None:
     return match.group('IP')
+  else:
+    return None
+
+
+HW_ADDR_PATTERN = re.compile(r"""HWaddr\s(?P<MAC>[\w:]{17})""", re.VERBOSE)
+def get_wan_mac():
+  """ Get MAC address of eth0. """
+  output = subprocess.check_output(['ifconfig', 'eth1'])
+  match = HW_ADDR_PATTERN.search(output)
+  if match is not None:
+    return match.group('MAC')
   else:
     return None
 

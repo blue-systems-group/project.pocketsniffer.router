@@ -1,17 +1,19 @@
 import re
 import threading
 import BaseHTTPServer
+import logging
 
-import utils
 import settings
 
 FILE_SIZE_PATTERN = re.compile(r"""(?P<size>\d+)M""")
 MB = 1024*1024
 
+logger = logging.getLogger('pocketsniffer')
+
 class ThroughputHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
   def do_GET(self):
-    utils.log("HTTP GET %s" % (self.path))
+    logger.debug("HTTP GET %s" % (self.path))
 
     match = FILE_SIZE_PATTERN.search(self.path)
     if match is None:
@@ -19,7 +21,7 @@ class ThroughputHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       return
 
     size = int(match.group('size'))
-    utils.log("File size is %d MB." % (size))
+    logger.debug("File size is %d MB." % (size))
 
     self.send_response(200)
     self.send_header('Content-type', 'application/octet-stream')
@@ -39,7 +41,7 @@ class HttpServerThread(threading.Thread):
     self.httpd = BaseHTTPServer.HTTPServer((self.addr, self.port), ThroughputHandler)
 
   def run(self):
-    utils.log("Starting HTTP server at port %d" % (self.port))
+    logger.debug("Starting HTTP server at port %d" % (self.port))
     self.httpd.serve_forever()
 
   def shutdown(self):

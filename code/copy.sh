@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for ap in ap1 ap4
+for ap in $@
 do
     scp *.py $ap:projects/pocketsniffer/
 done

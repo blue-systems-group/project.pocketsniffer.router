@@ -4,10 +4,17 @@ import re
 import socket
 import threading
 import traceback
+import logging
+import subprocess
+from datetime import datetime as dt
+
+from jsonschema import validate
 
 import utils
 import settings
-from common import Result, RequestHandler
+from common import RequestHandler
+
+logger = logging.getLogger('pocketsniffer')
 
 
 IW_SCAN_PATTERNS = {
@@ -34,9 +41,10 @@ def parse_iw_scan(output):
       if match is not None:
         r[name] = match.group(name)
     for name in ['frequency', 'RSSI', 'stationCount']:
-      r[name] = int(r[name])
+      if name in r:
+        r[name] = int(r[name])
     if 'bssLoad' in r:
-      r['bssLoad'] = int(1000*eval('1.0*%s' % (r['bssLoad'])))/1000.0
+      r['bssLoad'] = float('%.3f' % eval('1.0*%s' % (r['bssLoad'])))
     results.append(r)
   return results
 
@@ -46,8 +54,8 @@ IWINFO_PATTERNS = {
     'SSID': re.compile(r"""ESSID:\s"(?P<SSID>.*)"$""", re.MULTILINE),
     'channel': re.compile(r"""Channel:\s(?P<channel>\d+)""", re.MULTILINE),
     'txPower': re.compile(r"""Tx-Power:\s(?P<txPower>\d+)""", re.MULTILINE),
-    'signal': re.compile(r"""Signal:\s(?P<signal_dbm>[-\d]+)""", re.MULTILINE),
-    'noise': re.compile(r"""Noise:\s(?P<noise_dbm>[-\d]+)""", re.MULTILINE),
+    'signal': re.compile(r"""Signal:\s(?P<signal>[-\d]+)""", re.MULTILINE),
+    'noise': re.compile(r"""Noise:\s(?P<noise>[-\d]+)""", re.MULTILINE),
     }
 
 
@@ -59,7 +67,8 @@ def parse_iwinfo(output):
     if match is not None:
       info[name] = match.group(name)
   for name in ['channel', 'txPower', 'signal', 'noise']:
-    info[name] = int(info[name])
+    if name in info:
+      info[name] = int(info[name])
   return info
 
 
@@ -92,7 +101,7 @@ def parse_iw_station_dump(output):
         t[name] = match.group(name)
     for name in t.keys():
       if name != 'MAC':
-        t[name] = int(t[name])
+        t[name] = int(float(t[name]))
     stations.append(t)
   return stations
 
@@ -109,101 +118,99 @@ def parse_dhcp_leases():
   return s
 
  
-
-
-
-class HandlerThread(threading.Thread):
-  """ Handler thread for replies from clients."""
-
-  def __init__(self, conn, clients):
-    super(HandlerThread, self).__init__()
-    self.conn = conn
-    self.clients = clients
-
-  def run(self):
-    try:
-      self.conn.settimeout(settings.READ_TIMEOUT_SEC)
-      reply = json.loads(utils.recv_all(self.conn))
-      self.conn.close()
-    except:
-      utils.log("Failed to decode client reply.")
-      traceback.print_exc(settings.LOG_FILE)
-      return
-
-    client = self.clients[reply['mac']]
-
-    utils.log("Got reply from %s (%s)" % (client.MAC, client.IP))
-    try:
-      if 'isPhoneLabPhone' in reply:
-        setattr(client, 'isPhoneLabPhone', reply['isPhoneLabPhone'])
-      else:
-        setattr(client, 'isPhoneLabPhone', False)
-
-      if 'scanResult' in reply:
-        client.set_scan_results(reply['scanResult'])
-      if 'traffic' in reply:
-        client.set_traffic(reply['traffic'])
-    except:
-      utils.log("Failed to set scan results or traffic.")
-      traceback.print_exc(settings.LOG_FILE)
-
-
+CLIENT_COLLECT = ['clientScan', 'clientTraffic', 'clientLatency', 'clientThroughput']
 
 class CollectHandler(RequestHandler):
   """Main collector thread that handles requests from central controller."""
 
+  def handle_client_reply(self, conn):
+    try:
+      conn.settimeout(settings.READ_TIMEOUT_SEC)
+      client_reply = json.loads(utils.recv_all(conn))
+      conn.close()
+    except:
+      logger.debug("Failed to decode client reply.")
+      return
+
+    try:
+      validate(client_reply, settings.REPLY_SCHEMA)
+    except:
+      logger.debug("Failed to validate client reply.")
+      return
+
+    self.reply_lock.acquire()
+    for key in CLIENT_COLLECT:
+      if key in client_reply:
+        self.reply[key].extend(client_reply[key])
+    self.reply_lock.release()
+
+
   def handle(self):
     """Collect data from clients."""
-    result = CollectorResult(request)
 
-    utils.log("Collecting neighbor APs...")
-    result.neighborAPs = AccessPoint.collect('wlan0') + AccessPoint.collect('wlan1')
-    utils.log("%d neighbor APs found." % (len(result.neighborAPs)))
+    if 'apStatus' in self.request and self.request['apStatus']:
+      status = {'IP': utils.get_wan_ip(), 'MAC': utils.get_wan_mac(), 'band2g':{}, 'band5g':{}}
+      for iface, band in [('wlan0', 'band2g'), ('wlan1', 'band5g')]:
+        if iface not in subprocess.check_output('iwinfo', shell=True):
+          status[band]['enabled'] = False
+        else:
+          status[band]['enabled'] = True
+          status[band].update(parse_iwinfo(subprocess.check_output('iwinfo %s info' % (iface), shell=True)))
+      self.reply['apStatus'] = status
 
-    utils.log("Collecting associated clients...")
-    result.clients = Station.collect('wlan0') + Station.collect('wlan1')
-    utils.log("%d client stations found." % (len(result.clients)))
+    if 'apScan' in self.request and self.request['apScan']:
+      scan_result = {'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat(), "detailed": True,\
+          'resultList': parse_iw_scan(subprocess.check_output('iw wlan0 scan', shell=True))\
+          + parse_iw_scan(subprocess.check_output('iw wlan1 scan', shell=True))}
+      self.reply['apScan'] = scan_result
 
-    if request['clientScan'] or request['clientTraffic']:
-      msg = json.dumps(request)
-      utils.log("Sending messge: %s" % (msg))
+    if 'stationDump' in self.request and self.request['stationDump']:
+      station_dump = {'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat()}
+      for iface, band in [('wlan0', 'band2g'), ('wlan1', 'band5g')]:
+        station_dump[band] = parse_iw_station_dump(subprocess.check_output('iw %s station dump' % (iface), shell=True))
+      self.reply['stationDump'] = station_dump
+
+
+    if any([k in self.request and self.request[k] for k in CLIENT_COLLECT]):
+
+      for key in [k for k in CLIENT_COLLECT if k in self.request and self.request[k]]:
+        self.reply[key] = []
+
+      msg = json.dumps(self.request)
+      logger.debug("Sending messge: %s" % (msg))
 
       server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
       server_sock.bind((settings.LOCAL_IP, settings.LOCAL_TCP_PORT))
       server_sock.listen(settings.LOCAL_BACKLOG)
 
-      clients = []
-      for c in [c for c in result.clients if getattr(c, 'IP', None) is not None]:
-        utils.log("Sending to %s (%s)" % (c.MAC, c.IP))
+      stations = parse_iw_station_dump(subprocess.check_output('iw wlan0 station dump', shell=True)) \
+          + parse_iw_station_dump(subprocess.check_output('iw wlan1 station dump', shell=True))
+
+      expected_reply_num = 0
+      for s in stations:
         try:
-          conn = socket.create_connection((c.IP, settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
+          logger.debug("Sending to %s (%s)" % (s['MAC'], s['IP']))
+          conn = socket.create_connection((s['IP'], settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
           conn.sendall(msg)
           conn.close()
-          clients.append(c)
+          expected_reply_num = expected_reply_num + 1
         except:
-          utils.log("Failed to send to %s (%s)" % (c.MAC, c.IP))
-          traceback.print_exc(settings.LOG_FILE)
+          logger.exception("Failed to send request.")
 
-      clients = dict((c.MAC, c) for c in clients)
-
-      utils.log("Waiting for response...")
+      logger.debug("Waiting for response...")
 
       handler_threads = []
-      for i in range(0, len(clients)):
+      for i in range(0, expected_reply_num):
         try:
           conn, addr = server_sock.accept()
-        except KeyboardInterrupt:
-          server_sock.close()
-          sys.exit()
+        except:
+          logger.exception("Failed to accept.")
 
-        t = HandlerThread(conn, clients)
+        t = threading.Thread(target=self.handle_client_reply, args=(conn))
         t.start()
         handler_threads.append(t)
 
-
-      utils.log("Waiting for handler threads to finish.")
+      logger.debug("Waiting for handler threads to finish.")
       for t in handler_threads:
         t.join()
-
-    return result

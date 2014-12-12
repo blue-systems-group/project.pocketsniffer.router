@@ -44,5 +44,6 @@ VALID_TXPOWER_DBM = set(VALID_2GHZ_TXPOWER_DBM + VALID_5GHZ_TXPOWER_DBM)
 """ JSON schemas """
 SCHEMA_BASE_URL = "http://pocketsniffer.phone-lab.org/static/schemas/"
 self = sys.modules[__name__]
-for attr, name in zip(['%s_SCHEMA' % (s) for s in ['REQUEST', 'SCAN_RESULT', 'AP_STATUS', 'STATION_INFO']], ['%s.json' % (s) for s in 'request', 'scanresult', 'ap-status', 'station-info']):
+for attr, name in zip(['%s_SCHEMA' % (s) for s in ['REQUEST', 'REPLY', 'SCAN_RESULT', 'AP_STATUS', 'STATION_DUMP', 'TRAFFIC']],\
+    ['%s.json' % (s) for s in 'request', 'reply', 'scanresult', 'ap-status', 'station-dump', 'traffic']):
   setattr(self, attr, json.loads(urlopen(os.path.join(SCHEMA_BASE_URL, name)).read()))
