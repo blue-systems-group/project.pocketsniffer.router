@@ -114,11 +114,11 @@ def parse_dhcp_leases():
     for line in f.readlines():
       match = DHCP_LEASES_PATTERNS.match(line)
       if match is not None:
-        s[match.group['MAC']] = match.group('IP')
+        s[match.group('MAC')] = match.group('IP')
   return s
 
  
-CLIENT_COLLECT = ['clientScan', 'clientTraffic', 'clientLatency', 'clientThroughput']
+CLIENT_COLLECT = ['phonelabDevice', 'clientScan', 'clientTraffic', 'clientLatency', 'clientThroughput']
 
 class CollectHandler(RequestHandler):
   """Main collector thread that handles requests from central controller."""
@@ -129,14 +129,18 @@ class CollectHandler(RequestHandler):
       client_reply = json.loads(utils.recv_all(conn))
       conn.close()
     except:
-      logger.debug("Failed to decode client reply.")
+      logger.exception("Failed to decode client reply.")
       return
 
     try:
       validate(client_reply, settings.REPLY_SCHEMA)
     except:
-      logger.debug("Failed to validate client reply.")
+      logger.exception("Failed to validate client reply.")
       return
+
+    if 'clientScan' in client_reply and 'iwScanOutput' in client_reply['clientScan'][0]:
+      client_reply['clientScan'][0]['resultList'] = parse_iw_scan(client_reply['clientScan'][0]['iwScanOutput'])
+      client_reply['clientScan'][0]['iwScanOutput'] = None
 
     self.reply_lock.acquire()
     for key in CLIENT_COLLECT:
@@ -168,8 +172,10 @@ class CollectHandler(RequestHandler):
       station_dump = {'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat()}
       for iface, band in [('wlan0', 'band2g'), ('wlan1', 'band5g')]:
         station_dump[band] = parse_iw_station_dump(subprocess.check_output('iw %s station dump' % (iface), shell=True))
+        ip_table = parse_dhcp_leases()
+        for s in station_dump[band]:
+          s['IP'] = ip_table[s['MAC']]
       self.reply['stationDump'] = station_dump
-
 
     if any([k in self.request and self.request[k] for k in CLIENT_COLLECT]):
 
@@ -184,14 +190,13 @@ class CollectHandler(RequestHandler):
       server_sock.bind((settings.LOCAL_IP, settings.LOCAL_TCP_PORT))
       server_sock.listen(settings.LOCAL_BACKLOG)
 
-      stations = parse_iw_station_dump(subprocess.check_output('iw wlan0 station dump', shell=True)) \
-          + parse_iw_station_dump(subprocess.check_output('iw wlan1 station dump', shell=True))
+      stations = parse_dhcp_leases()
 
       expected_reply_num = 0
-      for s in stations:
+      for mac, ip in stations.items():
         try:
-          logger.debug("Sending to %s (%s)" % (s['MAC'], s['IP']))
-          conn = socket.create_connection((s['IP'], settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
+          logger.debug("Sending to %s (%s)" % (mac, ip))
+          conn = socket.create_connection((ip, settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
           conn.sendall(msg)
           conn.close()
           expected_reply_num = expected_reply_num + 1
@@ -207,7 +212,7 @@ class CollectHandler(RequestHandler):
         except:
           logger.exception("Failed to accept.")
 
-        t = threading.Thread(target=self.handle_client_reply, args=(conn))
+        t = threading.Thread(target=self.handle_client_reply, args=(conn,))
         t.start()
         handler_threads.append(t)
 
