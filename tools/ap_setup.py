@@ -44,6 +44,7 @@ EXTRA_MODULES = [
 'net-tools-hostname',
 'iwinfo',
 'hostapd-utils',
+'python-setuptools',
 ]
 
 parser = argparse.ArgumentParser()
