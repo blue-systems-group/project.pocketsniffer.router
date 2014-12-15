@@ -114,14 +114,20 @@ def get_wan_ip():
 
 
 HW_ADDR_PATTERN = re.compile(r"""HWaddr\s(?P<MAC>[\w:]{17})""", re.VERBOSE)
-def get_wan_mac():
-  """ Get MAC address of eth0. """
-  output = subprocess.check_output(['ifconfig', 'eth1'])
+def get_iface_mac(iface):
+  """ Get MAC address of iface. """
+  output = subprocess.check_output(['ifconfig', iface])
   match = HW_ADDR_PATTERN.search(output)
   if match is not None:
-    return match.group('MAC')
+    return match.group('MAC').lower()
   else:
     return None
+
+
+def get_wan_mac():
+  return get_iface_mac('eth1')
+
+
 
 
 

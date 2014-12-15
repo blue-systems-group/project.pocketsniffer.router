@@ -19,7 +19,7 @@ logger = logging.getLogger('pocketsniffer')
 
 IW_SCAN_PATTERNS = {
     'SSID': re.compile(r"""^SSID:\s(?P<SSID>.*)$""", re.MULTILINE),
-    'BSSID': re.compile(r"""^BSS\s(?P<BSSID>[:\w]{17})\(on\swlan\d\)$""", re.MULTILINE),
+    'BSSID': re.compile(r"""^BSS\s(?P<BSSID>[:\w]{17})\(on\swlan\d\)""", re.MULTILINE),
     'frequency': re.compile(r"""^freq:\s(?P<frequency>\d{4})$""", re.MULTILINE),
     'RSSI': re.compile(r"""^signal:\s(?P<RSSI>[-\d]*?)\.00 dBm$""", re.MULTILINE),
     'stationCount': re.compile(r"""^\*\sstation\scount:\s(?P<stationCount>\d*)$""", re.MULTILINE),
@@ -45,6 +45,8 @@ def parse_iw_scan(output):
         r[name] = int(r[name])
     if 'bssLoad' in r:
       r['bssLoad'] = float('%.3f' % eval('1.0*%s' % (r['bssLoad'])))
+    if 'BSSID' in r:
+      r['BSSID'] = r['BSSID'].lower()
     results.append(r)
   return results
 
@@ -69,6 +71,9 @@ def parse_iwinfo(output):
   for name in ['channel', 'txPower', 'signal', 'noise']:
     if name in info:
       info[name] = int(info[name])
+
+  if 'BSSID' in info:
+    info['BSSID'] = info['BSSID'].lower()
   return info
 
 
@@ -140,7 +145,7 @@ class CollectHandler(RequestHandler):
 
     if 'clientScan' in client_reply and 'iwScanOutput' in client_reply['clientScan'][0]:
       client_reply['clientScan'][0]['resultList'] = parse_iw_scan(client_reply['clientScan'][0]['iwScanOutput'])
-      client_reply['clientScan'][0]['iwScanOutput'] = None
+      del client_reply['clientScan'][0]['iwScanOutput']
 
     self.reply_lock.acquire()
     for key in CLIENT_COLLECT:
@@ -150,10 +155,8 @@ class CollectHandler(RequestHandler):
 
 
   def handle(self):
-    """Collect data from clients."""
-
-    if 'apStatus' in self.request and self.request['apStatus']:
-      status = {'IP': utils.get_wan_ip(), 'MAC': utils.get_wan_mac(), 'band2g':{}, 'band5g':{}}
+    if self.request.get('apStatus', False):
+      status = {'IP': utils.get_wan_ip(), 'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat(), 'band2g':{}, 'band5g':{}}
       for iface, band in [('wlan0', 'band2g'), ('wlan1', 'band5g')]:
         if iface not in subprocess.check_output('iwinfo', shell=True):
           status[band]['enabled'] = False
@@ -162,24 +165,28 @@ class CollectHandler(RequestHandler):
           status[band].update(parse_iwinfo(subprocess.check_output('iwinfo %s info' % (iface), shell=True)))
       self.reply['apStatus'] = status
 
-    if 'apScan' in self.request and self.request['apScan']:
-      scan_result = {'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat(), "detailed": True,\
-          'resultList': parse_iw_scan(subprocess.check_output('iw wlan0 scan', shell=True))\
-          + parse_iw_scan(subprocess.check_output('iw wlan1 scan', shell=True))}
-      self.reply['apScan'] = scan_result
+    if self.request.get('apScan', False):
+      self.reply['apScan'] = []
+      for iface in ['wlan0', 'wlan1']:
+        try:
+          scan_result = {'MAC': utils.get_iface_mac(iface), 'timestamp': dt.now().isoformat(), "detailed": True,\
+              'resultList': parse_iw_scan(subprocess.check_output('iw %s scan' % (iface), shell=True))}
+          self.reply['apScan'].append(scan_result)
+        except:
+          logger.exception("Failed to get scan results for %s" % (iface))
 
-    if 'stationDump' in self.request and self.request['stationDump']:
+    if self.request.get('stationDump', False):
       station_dump = {'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat()}
       for iface, band in [('wlan0', 'band2g'), ('wlan1', 'band5g')]:
         station_dump[band] = parse_iw_station_dump(subprocess.check_output('iw %s station dump' % (iface), shell=True))
         ip_table = parse_dhcp_leases()
         for s in station_dump[band]:
-          s['IP'] = ip_table[s['MAC']]
+          if s['MAC'] in ip_table:
+            s['IP'] = ip_table[s['MAC']]
       self.reply['stationDump'] = station_dump
 
-    if any([k in self.request and self.request[k] for k in CLIENT_COLLECT]):
-
-      for key in [k for k in CLIENT_COLLECT if k in self.request and self.request[k]]:
+    if any([self.request.get(k, False) for k in CLIENT_COLLECT]):
+      for key in [k for k in CLIENT_COLLECT if self.request.get(k, False)]:
         self.reply[key] = []
 
       msg = json.dumps(self.request)

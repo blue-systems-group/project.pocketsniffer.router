@@ -27,7 +27,7 @@ PUBLIC_BACKLOG = 10
 HTTP_PORT = 8080
 
 
-logging.basicConfig(format='[%(asctime)s] %(levelname)s [%(filename)32s:%(lineno)4d] %(message)s', level=logging.DEBUG)
+logging.basicConfig(filename='pocketsniffer.log', format='[%(asctime)s] %(levelname)s [%(filename)32s:%(lineno)4d] %(message)s', level=logging.DEBUG)
 
 
 """Hardware specs."""
