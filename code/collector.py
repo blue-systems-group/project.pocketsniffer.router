@@ -125,6 +125,45 @@ def parse_dhcp_leases():
  
 CLIENT_COLLECT = ['phonelabDevice', 'clientScan', 'clientTraffic', 'clientLatency', 'clientThroughput']
 
+def get_ap_status():
+  status = {'IP': utils.get_wan_ip(), 'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat(), 'band2g':{}, 'band5g':{}}
+  for iface, band in [('wlan0', 'band2g'), ('wlan1', 'band5g')]:
+    if iface not in subprocess.check_output('iwinfo', shell=True):
+      status[band]['enabled'] = False
+    else:
+      status[band]['enabled'] = True
+      status[band].update(parse_iwinfo(subprocess.check_output('iwinfo %s info' % (iface), shell=True)))
+  return status
+
+
+def get_ap_scan():
+  ap_scan = []
+  for iface in ['wlan0', 'wlan1']:
+    try:
+      scan_result = {'MAC': utils.get_iface_mac(iface), 'timestamp': dt.now().isoformat(), "detailed": True, 'resultList':[]}
+      scan_result['resultList'] = parse_iw_scan(subprocess.check_output('iw %s scan' % (iface), shell=True))
+      ap_scan.append(scan_result)
+    except:
+      logger.exception("Failed to get scan results for %s" % (iface))
+  return ap_scan
+
+
+def get_station_dump():
+  station_dump = {'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat()}
+  for iface, band in [('wlan0', 'band2g'), ('wlan1', 'band5g')]:
+    try:
+      station_dump[band] = parse_iw_station_dump(subprocess.check_output('iw %s station dump' % (iface), shell=True))
+      ip_table = parse_dhcp_leases()
+      for s in station_dump[band]:
+        if s['MAC'] in ip_table:
+          s['IP'] = ip_table[s['MAC']]
+    except:
+      logger.exception("Failed to get station dump for %s", iface)
+      station_dump[band] = []
+  return station_dump
+
+
+
 class CollectHandler(RequestHandler):
   """Main collector thread that handles requests from central controller."""
 
@@ -156,34 +195,13 @@ class CollectHandler(RequestHandler):
 
   def handle(self):
     if self.request.get('apStatus', False):
-      status = {'IP': utils.get_wan_ip(), 'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat(), 'band2g':{}, 'band5g':{}}
-      for iface, band in [('wlan0', 'band2g'), ('wlan1', 'band5g')]:
-        if iface not in subprocess.check_output('iwinfo', shell=True):
-          status[band]['enabled'] = False
-        else:
-          status[band]['enabled'] = True
-          status[band].update(parse_iwinfo(subprocess.check_output('iwinfo %s info' % (iface), shell=True)))
-      self.reply['apStatus'] = status
+      self.reply['apStatus'] = get_ap_status()
 
     if self.request.get('apScan', False):
-      self.reply['apScan'] = []
-      for iface in ['wlan0', 'wlan1']:
-        try:
-          scan_result = {'MAC': utils.get_iface_mac(iface), 'timestamp': dt.now().isoformat(), "detailed": True,\
-              'resultList': parse_iw_scan(subprocess.check_output('iw %s scan' % (iface), shell=True))}
-          self.reply['apScan'].append(scan_result)
-        except:
-          logger.exception("Failed to get scan results for %s" % (iface))
+      self.reply['apScan'] = get_ap_scan()
 
     if self.request.get('stationDump', False):
-      station_dump = {'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat()}
-      for iface, band in [('wlan0', 'band2g'), ('wlan1', 'band5g')]:
-        station_dump[band] = parse_iw_station_dump(subprocess.check_output('iw %s station dump' % (iface), shell=True))
-        ip_table = parse_dhcp_leases()
-        for s in station_dump[band]:
-          if s['MAC'] in ip_table:
-            s['IP'] = ip_table[s['MAC']]
-      self.reply['stationDump'] = station_dump
+      self.reply['stationDump'] = get_station_dump()
 
     if any([self.request.get(k, False) for k in CLIENT_COLLECT]):
       for key in [k for k in CLIENT_COLLECT if self.request.get(k, False)]:
