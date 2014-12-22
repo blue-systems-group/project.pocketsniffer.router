@@ -3,6 +3,7 @@
 import socket
 import json
 import logging
+import subprocess
 
 
 from jsonschema import validate
@@ -13,7 +14,6 @@ import settings
 
 from collector import CollectHandler
 from executor import APConfigHandler, ClientReasocHandler
-from throughput import HttpServerThread
 
 logger = logging.getLogger('pocketsniffer')
 
@@ -33,11 +33,20 @@ def main() :
     logger.error("Failed to get public IP.")
     return
 
-  
-  httpd = HttpServerThread()
-  httpd.start()
-  logger.debug("HTTP server started.")
+  logger.debug("Starting iperf daemon")
 
+  try:
+    subprocess.check_call('pgrep -f "iperf" | xargs kill -9', shell=True)
+  except :
+    logger.exception("Failed to kill existing iperf daemon")
+
+  try:
+    subprocess.check_call('iperf -s -p %d -D > %s &' % (settings.IPERF_PORT, settings.IPERF_LOGGING_FILE), shell=True)
+  except:
+    logger.exception("Failed to start iperf daemon")
+
+  logger.debug("Successfully bring up iperf daemon.");
+  
   server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
   server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
   server_sock.bind((public_ip, settings.PUBLIC_TCP_PORT))

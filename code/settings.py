@@ -13,6 +13,10 @@ LOCAL_BACKLOG = 10
 """The port that pocketsniffer app listens on."""
 CLIENT_TCP_PORT = 6543
 
+"""Iperf port"""
+IPERF_PORT = 5001
+IPERF_LOGGING_FILE = '/var/log/iperf.log'
+
 
 """Parameters for socket connection/read."""
 BUF_SIZE = 64*1024
@@ -27,7 +31,8 @@ PUBLIC_BACKLOG = 10
 HTTP_PORT = 8080
 
 
-logging.basicConfig(filename='pocketsniffer.log', format='[%(asctime)s] %(levelname)s [%(filename)32s:%(lineno)4d] %(message)s', level=logging.DEBUG)
+LOGGING_FILE = "/var/log/pocketsniffer.log"
+logging.basicConfig(filename=LOGGING_FILE, format='[%(asctime)s] %(levelname)s [%(filename)32s:%(lineno)4d] %(message)s', level=logging.DEBUG)
 
 
 """Hardware specs."""

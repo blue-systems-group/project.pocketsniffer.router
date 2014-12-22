@@ -45,6 +45,7 @@ EXTRA_MODULES = [
 'iwinfo',
 'hostapd-utils',
 'python-setuptools',
+'iperf',
 ]
 
 parser = argparse.ArgumentParser()
