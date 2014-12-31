@@ -25,11 +25,13 @@ class HeartbeatThread(threading.Thread):
     heartbeart['apStatus'] = get_ap_status()
     heartbeart['apScan'] = get_ap_scan()
     heartbeart['stationDump'] = get_station_dump()
+    logger.debug("Sending heartbeat: %s" % (json.dumps(heartbeart)))
 
     headers = {'Content-type': 'application/json'}
 
+
     try:
-      conn = httplib.HTTPConnection(self.host)
+      conn = httplib.HTTPConnection(self.host, strict=True)
       conn.request('POST', self.path, json.dumps(heartbeart), headers)
       respose = conn.getresponse()
       if respose.status != httplib.OK:

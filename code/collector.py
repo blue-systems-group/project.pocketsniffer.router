@@ -220,6 +220,8 @@ class CollectHandler(RequestHandler):
       expected_reply_num = 0
       for mac, ip in stations.items():
         try:
+          if not self.request.get('clientTraffic', False) and mac not in self.request.clients:
+              continue
           logger.debug("Sending to %s (%s)" % (mac, ip))
           conn = socket.create_connection((ip, settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
           conn.sendall(msg)

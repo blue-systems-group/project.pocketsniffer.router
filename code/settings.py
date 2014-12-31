@@ -20,8 +20,8 @@ IPERF_UDP_PORT = 5002
 IPERF_UDP_LOGGING_FILE = '/var/log/iperf-udp.log'
 
 """Heartbeat"""
-HEARTBEAT_HOST = 'http://pocketsniffer.phone-lab.org'
-HEARTBEAT_PATH = 'controller/heartbeat/ap'
+HEARTBEAT_HOST = 'pocketsniffer.phone-lab.org'
+HEARTBEAT_PATH = '/controller/heartbeat/ap'
 HEARTBEAT_INTERVAL_SEC = 60
 
 
