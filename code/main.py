@@ -14,6 +14,7 @@ import settings
 
 from collector import CollectHandler
 from executor import APConfigHandler, ClientReasocHandler
+from heartbeat import HeartbeatThread
 
 logger = logging.getLogger('pocketsniffer')
 
@@ -41,11 +42,16 @@ def main() :
     logger.exception("Failed to kill existing iperf daemon")
 
   try:
-    subprocess.check_call('iperf -s -p %d -D > %s &' % (settings.IPERF_PORT, settings.IPERF_LOGGING_FILE), shell=True)
+    subprocess.check_call('iperf -s -p %d -D -i 1 > %s &' % (settings.IPERF_TCP_PORT, settings.IPERF_TCP_LOGGING_FILE), shell=True)
+    subprocess.check_call('iperf -s -p %d -D -u -i 1 > %s &' % (settings.IPERF_UDP_PORT, settings.IPERF_UDP_LOGGING_FILE), shell=True)
   except:
     logger.exception("Failed to start iperf daemon")
 
-  logger.debug("Successfully bring up iperf daemon.");
+  logger.debug("Successfully fired up iperf daemon.");
+
+  logger.debug("Starting heartbeat thread.")
+  heartbeat = HeartbeatThread()
+  heartbeat.start()
   
   server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
   server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -74,7 +80,6 @@ def main() :
   except:
     logger.exception("Failed to listen.")
     server_sock.close()
-    httpd.shutdown()
 
 
 

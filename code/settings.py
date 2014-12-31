@@ -14,8 +14,15 @@ LOCAL_BACKLOG = 10
 CLIENT_TCP_PORT = 6543
 
 """Iperf port"""
-IPERF_PORT = 5001
-IPERF_LOGGING_FILE = '/var/log/iperf.log'
+IPERF_TCP_PORT = 5001
+IPERF_TCP_LOGGING_FILE = '/var/log/iperf-tcp.log'
+IPERF_UDP_PORT = 5002
+IPERF_UDP_LOGGING_FILE = '/var/log/iperf-udp.log'
+
+"""Heartbeat"""
+HEARTBEAT_HOST = 'http://pocketsniffer.phone-lab.org'
+HEARTBEAT_PATH = 'controller/heartbeat/ap'
+HEARTBEAT_INTERVAL_SEC = 60
 
 
 """Parameters for socket connection/read."""
