@@ -12,17 +12,20 @@ import argparse
 import glob
 
 DEFAULT_KEY = '~/.ssh/id_rsa.pub'
-DEFAULT_SSID = "PocketSniffer"
+DEFAULT_SSID2 = "PocketSniffer2"
+DEFAULT_SSID5 = "PocketSniffer5"
 DEFAULT_ROOT_PASSWORD = 'BM5jJBAiUaHCNFdJDUzJxdOuxi5CiLs9'
-DEFAULT_AP_PASSWORD =   'LDR9OXnevs5lBlCjz0MNga2H40DlT2m0'
+DEFAULT_AP_PASSWORD =   'abcd1234'
 DEFAULT_GATEWAY =     '192.168.1.1'
 DEFAULT_TEMPLATE_DIR = './templates/'
 DEFAULT_USER_NAME = 'jinghaos'
 DEFAULT_USER_PASS = 'jinghaos'
 
 HOSTNAME_PLACEHOLDER = '__hostname__'
-SSID_PLACEHOLDER = '__ssid__'
+SSID2_PLACEHOLDER = '__ssid2__'
+SSID5_PLACEHOLDER = '__ssid5__'
 PASSWORD_PLACEHOLDER = '__password__'
+CLONEMAC_PLACEHOLDER = '__clonemac__'
 PROMPT = '[#\$]'
 SSH_ARGS = '-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'
 KEY_FILE_NAME = 'id_isa.pub'
@@ -38,10 +41,6 @@ EXTRA_MODULES = [
 'shadow-usermod',
 'sudo',
 'python',
-'vim',
-'bash',
-'git',
-'net-tools-hostname',
 'iwinfo',
 'hostapd-utils',
 'python-setuptools',
@@ -53,7 +52,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--hostname', required=True, help="Hostname")
 
 parser.add_argument('--key', default=DEFAULT_KEY, help="Public key file for ssh.")
-parser.add_argument('--ssid',  default=DEFAULT_SSID, help="AP SSID")
+parser.add_argument('--ssid2',  default=DEFAULT_SSID2, help="AP SSID")
+parser.add_argument('--ssid5',  default=DEFAULT_SSID5, help="AP SSID")
 parser.add_argument('--clonemac', type=str, help="MAC address to clone")
 parser.add_argument('--rootpass', default=DEFAULT_ROOT_PASSWORD, help="Root password")
 parser.add_argument('--appass', default=DEFAULT_AP_PASSWORD, help="AP password")
@@ -179,20 +179,46 @@ else :
   raise Exception(str(child))
 
 
+log("Preparing configuration files...")
+try :
+  template_dir = glob.glob(os.path.expanduser(args.template))[0]
+except :
+  raise Exception("Template dir not found: %s." % (args.template))
+
+temp_dir = os.path.join(tempfile.mkdtemp(), 'templates')
+shutil.copytree(template_dir, temp_dir)
+for placeholder, sub, f in zip([HOSTNAME_PLACEHOLDER, SSID2_PLACEHOLDER, SSID5_PLACEHOLDER, PASSWORD_PLACEHOLDER],
+    [args.hostname, args.ssid2, args.ssid5, args.appass], ['system', 'wireless', 'wireless', 'wireless']) :
+  cmd = 'sed -i -e \'s@%s@%s@g\' %s' % (placeholder, sub, os.path.join(temp_dir, "etc/config/%s" % (f)))
+  if not args.quiet :
+    log(cmd)
+  subprocess.check_call(cmd, stdout=logfile, stderr=logfile, shell=True)
+
 if args.clonemac:
-  log("Setting up MAC clone...")
-  check_call(child, 'uci set network.wan.macaddr=%s' % args.clonemac)
-  check_call(child, 'uci commit')
-  check_call(child, 'ifdown wan && ifup wan')
+  cmd = 'sed -i -e \'s@%s@%s@g\' %s' % (CLONEMAC_PLACEHOLDER, args.clonemac, os.path.join(temp_dir, 'etc/init.d/clonemac'))
+  subprocess.check_call(cmd, stdout=logfile, stderr=logfile, shell=True)
+else:
+  os.remove(os.path.join(temp_dir, 'etc/init.d/clonemac'))
 
 
-log("Installing USB support...")
+log("Copying configurations files...")
+subprocess.check_call('scp %s -r %s/* root@%s:/' % (SSH_ARGS, temp_dir, args.gateway),
+      stdout=logfile, stderr=logfile, shell=True)
+
+
 child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
 child.logfile=logfile
 child.expect(PROMPT)
 
 
+if args.clonemac:
+  check_call(child, '/etc/init.d/clonemac start')
+  check_call(child, '/etc/init.d/clonemac enable')
+  check_call(child, 'udhcpc -i eth1 -q')
+  time.sleep(3)
 
+
+log("Installing USB support...")
 install_packages(child, USB_MODULES)
 
 
@@ -207,25 +233,6 @@ except :
   child = reboot(child)
 
 
-
-log("Preparing configuration files...")
-try :
-  template_dir = glob.glob(os.path.expanduser(args.template))[0]
-except :
-  raise Exception("Template dir not found: %s." % (args.template))
-
-temp_dir = os.path.join(tempfile.mkdtemp(), 'templates')
-shutil.copytree(template_dir, temp_dir)
-for placeholder, sub, f in zip([HOSTNAME_PLACEHOLDER, SSID_PLACEHOLDER, PASSWORD_PLACEHOLDER],
-    [args.hostname, args.ssid, args.appass], ['system', 'wireless', 'wireless']) :
-  cmd = 'sed -i -e \'s@%s@%s@g\' %s' % (placeholder, sub, os.path.join(temp_dir, "etc/config/%s" % (f)))
-  if not args.quiet :
-    log(cmd)
-  subprocess.check_call(cmd, stdout=logfile, stderr=logfile, shell=True)
-
-log("Copying configurations files...")
-subprocess.check_call('scp %s -r %s/* root@%s:/' % (SSH_ARGS, temp_dir, args.gateway),
-      stdout=logfile, stderr=logfile, shell=True)
 
 
 
