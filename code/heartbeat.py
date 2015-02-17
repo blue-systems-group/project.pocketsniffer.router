@@ -19,6 +19,8 @@ class HeartbeatThread(threading.Thread):
     self.path = path
     self.intervalSec = intervalSec
 
+    logger.debug("%s started." % (self.__class__.__name__))
+
 
   def send_heartbeat(self):
     heartbeart = dict()
@@ -36,7 +38,7 @@ class HeartbeatThread(threading.Thread):
       respose = conn.getresponse()
       if respose.status != httplib.OK:
         raise Exception(respose.reason)
-      logger.debug("Successfully sent heartbeat to %s", self.host)
+      logger.debug("Successfully sent heartbeat to %s%s", self.host, self.path)
     except:
       logger.exception("Failed to send heartbeat.")
 

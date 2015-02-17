@@ -52,10 +52,12 @@ class APConfigHandler(RequestHandler):
         else:
           logger.debug("Switching %s channel to %d" % (band, band_config['channel']))
           subprocess.check_call('uci set wireless.radio%d.channel=%d' % (idx, band_config['channel']), shell=True)
+          subprocess.check_call('uci commit', shell=True)
           if iface_enabled('wlan%d' % (idx)):
             try:
-              subprocess.check_call('hostapd_cli -i wlan%d chan_switch 1 %d' % (idx, utils.channel2freq(band_config['channel'])), shell=True)
+              subprocess.check_call('hostapd_cli -i wlan%d chan_switch 3 %d' % (idx, utils.channel2freq(band_config['channel'])), shell=True)
             except:
+              logger.exception("Failed to switch channel using hostapd.")
               need_restart_wifi = True
 
       if 'txpower' in band_config:

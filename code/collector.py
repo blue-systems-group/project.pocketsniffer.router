@@ -1,10 +1,9 @@
 import json
-import sys
 import re
 import socket
 import threading
-import traceback
 import logging
+import random
 import subprocess
 from datetime import datetime as dt
 
@@ -18,7 +17,7 @@ logger = logging.getLogger('pocketsniffer')
 
 
 IW_SCAN_PATTERNS = {
-    'SSID': re.compile(r"""^SSID:\s(?P<SSID>.*)$""", re.MULTILINE),
+    'SSID': re.compile(r"""^SSID:\s?(?P<SSID>.{0,31})$""", re.MULTILINE),
     'BSSID': re.compile(r"""^BSS\s(?P<BSSID>[:\w]{17})\(on\swlan\d\)""", re.MULTILINE),
     'frequency': re.compile(r"""^freq:\s(?P<frequency>\d{4})$""", re.MULTILINE),
     'RSSI': re.compile(r"""^signal:\s(?P<RSSI>[-\d]*?)\.00 dBm$""", re.MULTILINE),
@@ -44,7 +43,7 @@ def parse_iw_scan(output):
       if name in r:
         r[name] = int(r[name])
     if 'bssLoad' in r:
-      r['bssLoad'] = float('%.3f' % eval('1.0*%s' % (r['bssLoad'])))
+      r['bssLoad'] = round(eval('1.0*%s' % (r['bssLoad'])), 3)
     if 'BSSID' in r:
       r['BSSID'] = r['BSSID'].lower()
     results.append(r)
@@ -163,6 +162,16 @@ def get_station_dump():
   return station_dump
 
 
+def iperf_server_worker(port, udp):
+  logger.debug("Starting iperf %s server on port %d" % ('UDP' if udp else 'TCP', port))
+  cmd = 'iperf -s -i 1 -p %d -f m -P 1' % (port)
+  if udp:
+    cmd = '%s -u' % (cmd)
+
+  logger.debug(cmd)
+  subprocess.check_output(cmd, shell=True)
+
+
 
 class CollectHandler(RequestHandler):
   """Main collector thread that handles requests from central controller."""
@@ -193,6 +202,13 @@ class CollectHandler(RequestHandler):
     self.reply_lock.release()
 
 
+  def custom_validate(self):
+    for attr, detail in [('clientTraffic', 'clients'), ('clientLatency', 'pingArgs'), ('clientThroughput', 'iperfArgs')]:
+      if self.request.get(attr, False):
+        if detail not in self.request:
+          raise Exception("No %s specified while collecting %s." % (detail, attr))
+
+
   def handle(self):
     if self.request.get('apStatus', False):
       self.reply['apStatus'] = get_ap_status()
@@ -203,26 +219,54 @@ class CollectHandler(RequestHandler):
     if self.request.get('stationDump', False):
       self.reply['stationDump'] = get_station_dump()
 
+
     if any([self.request.get(k, False) for k in CLIENT_COLLECT]):
       for key in [k for k in CLIENT_COLLECT if self.request.get(k, False)]:
         self.reply[key] = []
 
-      msg = json.dumps(self.request)
-      logger.debug("Sending messge: %s" % (msg))
+      if self.request.get('clientThroughput', False):
+        iperfArgs = self.request['iperfArgs']
+      else:
+        iperfArgs = None
+      iperf_servers = dict()
+
+      target_clients = self.request.get('clients', [])
 
       server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
       server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
       server_sock.bind((settings.LOCAL_IP, settings.LOCAL_TCP_PORT))
       server_sock.listen(settings.LOCAL_BACKLOG)
+      server_sock.settimeout(settings.SERVER_TIMEOUT_SEC)
 
-      stations = parse_dhcp_leases()
+      station_dump = get_station_dump()
+
+      stations = station_dump['band2g'] + station_dump['band5g']
+
 
       expected_reply_num = 0
-      for mac, ip in stations.items():
+      for sta in stations:
+        mac, ip = sta['MAC'], sta['IP']
         try:
-          if not self.request.get('clientTraffic', False) and mac not in self.request.clients:
-              continue
-          logger.debug("Sending to %s (%s)" % (mac, ip))
+          if self.request.get('clientTraffic', False) and mac in target_clients:
+            logger.debug("Skip client %s" % (mac))
+            continue
+
+          if len(target_clients) > 0 and mac not in target_clients:
+            logger.debug("Skip client %s" % (mac))
+            continue
+
+          if self.request.get('clientThroughput', False):
+            while True:
+              port = random.randint(*settings.IPERF_PORT_RANGE)
+              if port not in iperf_servers:
+                break
+            t = threading.Thread(target=iperf_server_worker, args=(port, '-u' in self.request['iperfArgs']))
+            t.start()
+            iperf_servers[port] = t
+            self.request['iperfArgs'] = iperfArgs % (port)
+
+          msg = json.dumps(self.request)
+          logger.debug("Sending to %s (%s): %s " % (mac, ip, msg))
           conn = socket.create_connection((ip, settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
           conn.sendall(msg)
           conn.close()
@@ -230,19 +274,23 @@ class CollectHandler(RequestHandler):
         except:
           logger.exception("Failed to send request.")
 
-      logger.debug("Waiting for response...")
+      logger.debug("Waiting for %d response." % (expected_reply_num))
 
       handler_threads = []
       for i in range(0, expected_reply_num):
         try:
           conn, addr = server_sock.accept()
+          logger.debug("Got reply from %s" % (str(addr)))
+          t = threading.Thread(target=self.handle_client_reply, args=(conn,))
+          t.start()
+          handler_threads.append(t)
         except:
           logger.exception("Failed to accept.")
 
-        t = threading.Thread(target=self.handle_client_reply, args=(conn,))
-        t.start()
-        handler_threads.append(t)
 
       logger.debug("Waiting for handler threads to finish.")
       for t in handler_threads:
         t.join()
+
+      if self.request.get('clientThroughput', False):
+        self.request['iperfArgs'] = iperfArgs

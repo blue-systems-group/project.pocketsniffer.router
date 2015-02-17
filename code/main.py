@@ -3,7 +3,6 @@
 import socket
 import json
 import logging
-import subprocess
 
 
 from jsonschema import validate
@@ -15,6 +14,7 @@ import settings
 from collector import CollectHandler
 from executor import APConfigHandler, ClientReasocHandler
 from heartbeat import HeartbeatThread
+from monitor import MonitorThread
 
 logger = logging.getLogger('pocketsniffer')
 
@@ -34,24 +34,8 @@ def main() :
     logger.error("Failed to get public IP.")
     return
 
-  logger.debug("Starting iperf daemon")
-
-  try:
-    subprocess.check_call('pgrep -f "iperf" | xargs kill -9', shell=True)
-  except :
-    logger.exception("Failed to kill existing iperf daemon")
-
-  try:
-    subprocess.check_call('iperf -s -p %d -D -i 1 > %s &' % (settings.IPERF_TCP_PORT, settings.IPERF_TCP_LOGGING_FILE), shell=True)
-    subprocess.check_call('iperf -s -p %d -D -u -i 1 > %s &' % (settings.IPERF_UDP_PORT, settings.IPERF_UDP_LOGGING_FILE), shell=True)
-  except:
-    logger.exception("Failed to start iperf daemon")
-
-  logger.debug("Successfully fired up iperf daemon.");
-
-  logger.debug("Starting heartbeat thread.")
-  heartbeat = HeartbeatThread()
-  heartbeat.start()
+  for t in [HeartbeatThread, MonitorThread]:
+    t().start()
   
   server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
   server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
