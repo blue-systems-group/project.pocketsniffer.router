@@ -14,7 +14,7 @@ import glob
 DEFAULT_KEY = '~/.ssh/id_rsa.pub'
 DEFAULT_SSID2 = "PocketSniffer2"
 DEFAULT_SSID5 = "PocketSniffer5"
-DEFAULT_ROOT_PASSWORD = 'BM5jJBAiUaHCNFdJDUzJxdOuxi5CiLs9'
+DEFAULT_ROOT_PASSWORD = 'jN8HhAD8'
 DEFAULT_AP_PASSWORD =   'abcd1234'
 DEFAULT_GATEWAY =     '192.168.1.1'
 DEFAULT_TEMPLATE_DIR = './templates/'
@@ -31,9 +31,18 @@ SSH_ARGS = '-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'
 KEY_FILE_NAME = 'id_isa.pub'
 DEV_PATH = '/dev/sda1'
 
-USB_MODULES = ['kmod-usb-core', 'kmod-usb-ohci', 'kmod-usb-uhci', 'kmod-usb2',
-    'usbutils', 'kmod-usb-storage', 'kmod-fs-ext4', 'kmod-usb-storage-extras',
-    'block-mount', 'e2fsprogs']
+USB_MODULES = [
+'kmod-usb-core',
+'kmod-usb-ohci',
+'kmod-usb-uhci',
+'kmod-usb2',
+'kmod-usb-storage',
+'kmod-fs-ext4',
+'kmod-usb-storage-extras',
+'usbutils',
+'block-mount',
+'e2fsprogs',
+]
 
 EXTRA_MODULES = [
 'shadow-useradd',
@@ -43,7 +52,7 @@ EXTRA_MODULES = [
 'python',
 'iwinfo',
 'hostapd-utils',
-'python-setuptools',
+# 'python-setuptools',
 'iperf',
 ]
 
@@ -86,7 +95,7 @@ Install a list of packages.
 """
 def install_packages(session, pkgs) :
   check_call(session, 'opkg update')
-  check_call(session, 'opkg install %s' % (' '.join(pkgs)))
+  check_call(session, 'opkg --force-depends install %s' % (' '.join(pkgs)))
 
 """
 Reboot router, resume ssh session after rebooting.
@@ -203,7 +212,7 @@ else:
 
 log("Copying configurations files...")
 subprocess.check_call('scp %s -r %s/* root@%s:/' % (SSH_ARGS, temp_dir, args.gateway),
-      stdout=logfile, stderr=logfile, shell=True)
+    stdout=logfile, stderr=logfile, shell=True)
 
 
 child = pexpect.spawn('ssh %s root@%s' % (SSH_ARGS, args.gateway))
@@ -248,7 +257,7 @@ except :
   check_call(child, 'mkdir -p /mnt/usb')
 
   log("Copying existing overlay files...")
-  check_call(child, 'mount -t ext4 %s /mnt/usb' % (DEV_PATH))
+  check_call(child, 'mount %s /mnt/usb/' % (DEV_PATH))
   check_call(child, 'tar -C /overlay -cvf - . | tar -C /mnt/usb -xf -')
 
   child = reboot(child)
