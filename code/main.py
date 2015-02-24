@@ -34,15 +34,16 @@ def main() :
     logger.error("Failed to get public IP.")
     return
 
-  for t in [HeartbeatThread, MonitorThread]:
-    t().start()
-  
   server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
   server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
   server_sock.bind((public_ip, settings.PUBLIC_TCP_PORT))
   server_sock.listen(settings.PUBLIC_BACKLOG)
 
   logger.debug("Listening on %s (%d)..." % (public_ip, settings.PUBLIC_TCP_PORT))
+
+
+  for t in [HeartbeatThread, MonitorThread]:
+    t().start()
 
   try:
     while True:
@@ -60,7 +61,9 @@ def main() :
         continue
 
       logger.debug("Got message from %s: %s" % (addr, json.dumps(request)))
-      HANDLER_MAPPING[request['action']](conn, request).start()
+      t = HANDLER_MAPPING[request['action']](conn, request)
+      t.start()
+      t.join()
   except:
     logger.exception("Failed to listen.")
     server_sock.close()

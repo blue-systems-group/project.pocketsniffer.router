@@ -4,7 +4,7 @@ import logging
 import subprocess
 
 from common import RequestHandler
-from collector import parse_dhcp_leases
+from collector import get_station_dump
 import utils
 import settings
 
@@ -82,15 +82,27 @@ class APConfigHandler(RequestHandler):
 class ClientReasocHandler(RequestHandler):
 
   def handle(self):
-    stations = parse_dhcp_leases()
-    if self.request['client'] not in stations:
-      logger.error("Client %d does not exist.")
+    if len(self.request['clients']) > 1 :
+      logger.error("More than one clients specified. Ignoring.")
       return
 
-    client_ip = stations[self.request['client']]
+    mac = self.request['clients'][0]
+
+    station_dump = get_station_dump()
+    stations = station_dump['band2g'] + station_dump['band5g']
+
+    sta = [s for s in stations if s['MAC'] == mac]
+
+    if len(sta) == 0:
+      logger.error("Station %s not associated." % (mac))
+      return
+
+    if sta['IP'] is None:
+      logger.error("No IP address for %s found." % (mac))
+      return
 
     try:
-      conn = socket.create_connection((client_ip, settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
+      conn = socket.create_connection((sta['IP'], settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
       conn.sendall(json.dumps(self.request))
       conn.close()
     except:

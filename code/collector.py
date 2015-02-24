@@ -122,7 +122,7 @@ def parse_dhcp_leases():
   return s
 
  
-CLIENT_COLLECT = ['phonelabDevice', 'clientScan', 'clientTraffic', 'clientLatency', 'clientThroughput']
+CLIENT_COLLECT = ['phonelabDevice', 'clientScan', 'clientTraffic', 'clientLatency', 'clientThroughput', 'nearbyDevices']
 
 def get_ap_status():
   status = {'IP': utils.get_wan_ip(), 'MAC': utils.get_wan_mac(), 'timestamp': dt.now().isoformat(), 'band2g':{}, 'band5g':{}}
@@ -164,7 +164,7 @@ def get_station_dump():
 
 def iperf_server_worker(port, udp):
   logger.debug("Starting iperf %s server on port %d" % ('UDP' if udp else 'TCP', port))
-  cmd = 'iperf -s -i 1 -p %d -f m -P 1' % (port)
+  cmd = 'iperf -s -i 1 -p %d -f m' % (port)
   if udp:
     cmd = '%s -u' % (cmd)
 
@@ -239,7 +239,6 @@ class CollectHandler(RequestHandler):
       server_sock.settimeout(settings.SERVER_TIMEOUT_SEC)
 
       station_dump = get_station_dump()
-
       stations = station_dump['band2g'] + station_dump['band5g']
 
 
@@ -269,6 +268,7 @@ class CollectHandler(RequestHandler):
           logger.debug("Sending to %s (%s): %s " % (mac, ip, msg))
           conn = socket.create_connection((ip, settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
           conn.sendall(msg)
+          conn.shutdown(socket.SHUT_WR)
           conn.close()
           expected_reply_num = expected_reply_num + 1
         except:
@@ -291,6 +291,13 @@ class CollectHandler(RequestHandler):
       logger.debug("Waiting for handler threads to finish.")
       for t in handler_threads:
         t.join()
+
+      if len(iperf_servers) > 0:
+        logger.debug("Killing iperf servers.")
+        try:
+          subprocess.check_call('pgrep -f "iperf" | xargs kill -9', shell=True)
+        except:
+          pass
 
       if self.request.get('clientThroughput', False):
         self.request['iperfArgs'] = iperfArgs
