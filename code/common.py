@@ -1,12 +1,24 @@
 import threading
+import json
+import socket
 import logging
 
-import utils
+import settings
 
 
 logger = logging.getLogger('pocketsniffer')
 
-class RequestHandler(threading.Thread):
+class Handler(threading.Thread):
+
+  def send_reply(self):
+    logger.debug("Sending reply: %s" % (str(json.dumps(self.reply))))
+    conn = socket.create_connection((settings.SERVER_NAME, settings.PUBLIC_TCP_PORT))
+    conn.sendall(json.dumps(self.reply))
+    conn.shutdown(socket.SHUT_WR)
+    conn.close()
+ 
+
+class RequestHandler(Handler):
 
   def __init__(self, conn, request):
     super(RequestHandler, self).__init__()
@@ -19,23 +31,7 @@ class RequestHandler(threading.Thread):
   def custom_validate(self):
     pass
 
+
   def run(self):
     self.custom_validate()
-
-    try:
-      self.handle()
-    except:
-      logger.exception("Failed to handle request.")
-      return
-
-    if self.reply is not None:
-      logger.debug("Sending reply to %s." % (str(self.conn.getpeername())))
-      try:
-        self.conn.sendall(utils.Encoder().encode(self.reply))
-      except:
-        logger.exception("Failed to send reply back.")
-
-    try:
-      self.conn.close()
-    except:
-      pass
+    self.handle()

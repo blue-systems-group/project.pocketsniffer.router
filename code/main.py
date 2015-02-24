@@ -11,10 +11,9 @@ import utils
 import settings
 
 
-from collector import CollectHandler
+from collector import CollectHandler, ReplyHandler
 from executor import APConfigHandler, ClientReasocHandler
 from heartbeat import HeartbeatThread
-from monitor import MonitorThread
 
 logger = logging.getLogger('pocketsniffer')
 
@@ -23,6 +22,7 @@ HANDLER_MAPPING = {
     'apConfig': APConfigHandler,
     'clientReassoc': ClientReasocHandler,
     }
+
 
 
 def main() :
@@ -36,13 +36,12 @@ def main() :
 
   server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
   server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-  server_sock.bind((public_ip, settings.PUBLIC_TCP_PORT))
+  server_sock.bind(('0.0.0.0', settings.PUBLIC_TCP_PORT))
   server_sock.listen(settings.PUBLIC_BACKLOG)
 
   logger.debug("Listening on %s (%d)..." % (public_ip, settings.PUBLIC_TCP_PORT))
 
-
-  for t in [HeartbeatThread, MonitorThread]:
+  for t in [HeartbeatThread]:
     t().start()
 
   try:
@@ -54,21 +53,27 @@ def main() :
         logger.exception("Failed to read message.")
         continue
 
+      if 'action' in request:
+        schema = settings.REQUEST_SCHEMA
+        handler = HANDLER_MAPPING[request['action']](conn, request)
+      elif 'request' in request:
+        schema = settings.REPLY_SCHEMA
+        handler = ReplyHandler(request)
+      else:
+        logger.error("Not a request or reply.")
+        continue
+
       try:
-        validate(request, settings.REQUEST_SCHEMA)
+        validate(request, schema)
       except:
         logger.exception("Failed to validate request msg.")
         continue
 
       logger.debug("Got message from %s: %s" % (addr, json.dumps(request)))
-      t = HANDLER_MAPPING[request['action']](conn, request)
-      t.start()
-      t.join()
+      handler.start()
   except:
     logger.exception("Failed to listen.")
     server_sock.close()
-
-
 
 if __name__ == '__main__' :
   main()

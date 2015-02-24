@@ -7,21 +7,9 @@ from urllib2 import urlopen
 SERVER_NAME = 'pocketsniffer.phone-lab.org'
 
 
-"""IP and port for listening client reply."""
-LOCAL_IP = '192.168.1.1'
-LOCAL_TCP_PORT = 6543
-LOCAL_BACKLOG = 10
-
-"""The port that pocketsniffer app listens on."""
-CLIENT_TCP_PORT = 6543
-
 """Iperf port"""
-IPERF_TCP_PORT = 5555
-IPERF_TCP_LOGGING_FILE = '/var/log/iperf-tcp.log'
-IPERF_UDP_PORT = 6666
-IPERF_UDP_LOGGING_FILE = '/var/log/iperf-udp.log'
-
 IPERF_PORT_RANGE = (5555, 6666)
+
 
 """Heartbeat"""
 HEARTBEAT_HOST = SERVER_NAME
@@ -33,12 +21,12 @@ HEARTBEAT_INTERVAL_SEC = 300
 BUF_SIZE = 64*1024
 CONNECTION_TIMEOUT_SEC = 10
 READ_TIMEOUT_SEC = 10
-SERVER_TIMEOUT_SEC = 180
 
 
-"""Port for listening controller collector requests."""
+"""Port for listening requests."""
 PUBLIC_TCP_PORT = 7654
 PUBLIC_BACKLOG = 10
+
 
 """Logging."""
 LOGGING_FILE = "/var/log/pocketsniffer.log"
