@@ -182,7 +182,6 @@ class CollectHandler(RequestHandler):
 
   def handle_client_reply(self, conn):
     try:
-      conn.settimeout(settings.READ_TIMEOUT_SEC)
       client_reply = json.loads(utils.recv_all(conn))
       conn.close()
     except:
@@ -214,31 +213,30 @@ class CollectHandler(RequestHandler):
 
 
   def handle(self):
-    if any([self.request.get(k, False) for k in AP_COLLECT]):
-      if self.request.get('apStatus', False):
-        self.reply['apStatus'] = get_ap_status()
+    if self.request.get('apStatus', False):
+      self.reply['apStatus'] = get_ap_status()
 
-      if self.request.get('apScan', False):
-        self.reply['apScan'] = get_ap_scan()
+    if self.request.get('apScan', False):
+      self.reply['apScan'] = get_ap_scan()
 
-      if self.request.get('stationDump', False):
-        self.reply['stationDump'] = get_station_dump()
-
-      self.send_reply()
+    if self.request.get('stationDump', False):
+      self.reply['stationDump'] = get_station_dump()
 
     if any([self.request.get(k, False) for k in CLIENT_COLLECT]):
+
+      for key in CLIENT_COLLECT:
+        if key in self.request:
+          self.reply[key] = []
+
       if self.request.get('clientThroughput', False):
         iperfArgs = self.request['iperfArgs']
-        match = IPERF_DURATION_PATTERN.search(iperfArgs)
-        if match is None:
-          logger.debug("No duratio found in iperf args.")
-          iperf_duration = 120
-        else:
-          iperf_duration = int(match.group('duration'))
-        logger.debug("Set iperf duration to %d seconds." % (iperf_duration))
       else:
         iperfArgs = None
-        iperf_duration = None
+
+      if self.request.get('clientTraffic', False):
+        block = False
+      else:
+        block = True
 
       iperf_servers = dict()
 
@@ -247,10 +245,19 @@ class CollectHandler(RequestHandler):
       station_dump = get_station_dump()
       stations = station_dump['band2g'] + station_dump['band5g']
 
+      handler_threads = []
+
       for sta in stations:
         mac, ip = sta['MAC'], sta['IP']
         try:
-          if self.request['action'] != 'clientTraffic' and len(target_clients) > 0 and mac not in target_clients:
+          skip = False
+          if self.request.get('clientTraffic', False) and mac in target_clients:
+            skip = True
+
+          if not self.request.get('clientTraffic', False) and len(target_clients) > 0 and mac not in target_clients:
+            skip = True
+
+          if skip:
             logger.debug("Skip client %s" % (mac))
             continue
 
@@ -269,17 +276,28 @@ class CollectHandler(RequestHandler):
           conn = socket.create_connection((ip, settings.PUBLIC_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
           conn.sendall(msg)
           conn.shutdown(socket.SHUT_WR)
-          conn.close()
+          if block:
+            t = threading.Thread(target=self.handle_client_reply, args=(conn,))
+            t.start()
+            handler_threads.append(t)
+          else:
+            conn.close()
         except:
           logger.exception("Failed to send request.")
 
+      if len(handler_threads) > 0:
+        logger.debug("Waiting for client replies.")
+        for t in handler_threads:
+          t.join()
+
       if len(iperf_servers) > 0:
-        time.sleep(iperf_duration)
         logger.debug("Killing iperf servers.")
         try:
           subprocess.check_call('pgrep -f "iperf" | xargs kill -9', shell=True)
         except:
           pass
+
+    logger.debug("Finished handling collect request.")
 
 
 class ReplyHandler(Handler):

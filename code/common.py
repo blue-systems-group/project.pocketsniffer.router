@@ -18,7 +18,7 @@ class Handler(threading.Thread):
     conn.close()
  
 
-class RequestHandler(Handler):
+class RequestHandler(threading.Thread):
 
   def __init__(self, conn, request):
     super(RequestHandler, self).__init__()
@@ -30,8 +30,21 @@ class RequestHandler(Handler):
 
   def custom_validate(self):
     pass
+  
+
+  def send_reply(self):
+    self.conn.sendall(json.dumps(self.reply))
+    self.conn.shutdown(socket.SHUT_WR)
+    self.conn.close()
 
 
   def run(self):
     self.custom_validate()
-    self.handle()
+
+    try:
+      self.handle()
+    except:
+      logger.exception("Failed to handle request.")
+
+    if len(self.reply) > 1:
+      self.send_reply()
