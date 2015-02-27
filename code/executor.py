@@ -79,31 +79,25 @@ class APConfigHandler(RequestHandler):
 
 
 
-class ClientReasocHandler(RequestHandler):
+class ClientExecuteHandler(RequestHandler):
 
   def handle(self):
-    if len(self.request['clients']) > 1 :
-      logger.error("More than one clients specified. Ignoring.")
-      return
-
-    mac = self.request['clients'][0]
-
     station_dump = get_station_dump()
     stations = station_dump['band2g'] + station_dump['band5g']
 
-    sta = [s for s in stations if s['MAC'] == mac]
+    for sta in stations:
+      if sta['MAC'] not in self.request['clients']:
+        logger.debug("Skipping %s: not in targets." % (sta['MAC']))
+        continue
 
-    if len(sta) == 0:
-      logger.error("Station %s not associated." % (mac))
-      return
+      if 'IP' not in sta:
+        logger.debug("Skipping %s: no IP address." % (sta['MAC']))
+        continue
 
-    if sta['IP'] is None:
-      logger.error("No IP address for %s found." % (mac))
-      return
-
-    try:
-      conn = socket.create_connection((sta['IP'], settings.CLIENT_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
-      conn.sendall(json.dumps(self.request))
-      conn.close()
-    except:
-      logger.exception("Failed to forward message to client.")
+      logger.debug("Forwarding to %s" % (sta['MAC']))
+      try:
+        conn = socket.create_connection((sta['IP'], settings.PUBLIC_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
+        conn.sendall(json.dumps(self.request))
+        conn.close()
+      except:
+        logger.exception("Failed to forward message to client.")

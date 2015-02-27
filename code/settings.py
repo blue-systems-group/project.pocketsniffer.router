@@ -20,7 +20,7 @@ HEARTBEAT_INTERVAL_SEC = 300
 """Parameters for socket connection/read."""
 BUF_SIZE = 64*1024
 CONNECTION_TIMEOUT_SEC = 10
-READ_TIMEOUT_SEC = 10
+READ_TIMEOUT_SEC = 60
 
 
 """Port for listening requests."""

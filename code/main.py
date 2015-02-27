@@ -3,6 +3,7 @@
 import socket
 import json
 import logging
+import subprocess
 
 
 from jsonschema import validate
@@ -12,7 +13,7 @@ import settings
 
 
 from collector import CollectHandler, ReplyHandler
-from executor import APConfigHandler, ClientReasocHandler
+from executor import APConfigHandler, ClientExecuteHandler
 from heartbeat import HeartbeatThread
 
 logger = logging.getLogger('pocketsniffer')
@@ -20,7 +21,8 @@ logger = logging.getLogger('pocketsniffer')
 HANDLER_MAPPING = {
     'collect': CollectHandler,
     'apConfig': APConfigHandler,
-    'clientReassoc': ClientReasocHandler,
+    'clientReassoc': ClientExecuteHandler,
+    'clientReboot': ClientExecuteHandler,
     }
 
 
@@ -33,6 +35,14 @@ def main() :
   else:
     logger.error("Failed to get public IP.")
     return
+
+  logger.debug("Cleanup iperf servers.")
+  try:
+    subprocess.check_call('pgrep -f "iperf" | xargs kill -9', shell=True)
+  except:
+    pass
+
+
 
   server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
   server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -55,10 +65,10 @@ def main() :
 
       if 'action' in request:
         schema = settings.REQUEST_SCHEMA
-        handler = HANDLER_MAPPING[request['action']](conn, request)
+        handler_thread = HANDLER_MAPPING[request['action']](conn, request)
       elif 'request' in request:
         schema = settings.REPLY_SCHEMA
-        handler = ReplyHandler(request)
+        handler_thread = ReplyHandler(request)
       else:
         logger.error("Not a request or reply.")
         continue
@@ -70,7 +80,7 @@ def main() :
         continue
 
       logger.debug("Got message from %s: %s" % (addr, json.dumps(request)))
-      handler.start()
+      handler_thread.start()
   except:
     logger.exception("Failed to listen.")
     server_sock.close()

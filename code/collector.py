@@ -194,6 +194,8 @@ class CollectHandler(RequestHandler):
       logger.exception("Failed to validate client reply.")
       return
 
+    logger.debug("Got client reply: %s" % (json.dumps(client_reply)))
+
     if 'clientScan' in client_reply and 'iwScanOutput' in client_reply['clientScan'][0]:
       client_reply['clientScan'][0]['resultList'] = parse_iw_scan(client_reply['clientScan'][0]['iwScanOutput'])
       del client_reply['clientScan'][0]['iwScanOutput']
@@ -248,6 +250,9 @@ class CollectHandler(RequestHandler):
       handler_threads = []
 
       for sta in stations:
+        if 'IP' not in sta:
+          logger.debug("Skip client %s with no IP." % (sta['MAC']))
+          continue
         mac, ip = sta['MAC'], sta['IP']
         try:
           skip = False
@@ -273,10 +278,11 @@ class CollectHandler(RequestHandler):
 
           msg = json.dumps(self.request)
           logger.debug("Sending to %s (%s): %s " % (mac, ip, msg))
-          conn = socket.create_connection((ip, settings.PUBLIC_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
+          conn = socket.create_connection((ip, settings.PUBLIC_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC)
           conn.sendall(msg)
           conn.shutdown(socket.SHUT_WR)
           if block:
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             t = threading.Thread(target=self.handle_client_reply, args=(conn,))
             t.start()
             handler_threads.append(t)
@@ -286,7 +292,7 @@ class CollectHandler(RequestHandler):
           logger.exception("Failed to send request.")
 
       if len(handler_threads) > 0:
-        logger.debug("Waiting for client replies.")
+        logger.debug("Waiting for %d client replies." % (len(handler_threads)))
         for t in handler_threads:
           t.join()
 

@@ -90,7 +90,7 @@ def station_dump(iface='wlan0'):
 def recv_all(sock) :
   """Read as many as bytes from socket."""
   content = []
-  sock.settimeout(settings.READ_TIMEOUT_SEC*1000)
+  sock.settimeout(settings.READ_TIMEOUT_SEC)
   try :
     while True :
       data = sock.recv(settings.BUF_SIZE)

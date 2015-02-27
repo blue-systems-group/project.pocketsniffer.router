@@ -11,7 +11,7 @@ logger = logging.getLogger('pocketsniffer')
 class Handler(threading.Thread):
 
   def send_reply(self):
-    logger.debug("Sending reply: %s" % (str(json.dumps(self.reply))))
+    logger.debug("Forwarding reply: %s" % (str(json.dumps(self.reply))))
     conn = socket.create_connection((settings.SERVER_NAME, settings.PUBLIC_TCP_PORT))
     conn.sendall(json.dumps(self.reply))
     conn.shutdown(socket.SHUT_WR)
@@ -33,6 +33,7 @@ class RequestHandler(threading.Thread):
   
 
   def send_reply(self):
+    logger.debug("Sending back reply.")
     self.conn.sendall(json.dumps(self.reply))
     self.conn.shutdown(socket.SHUT_WR)
     self.conn.close()
