@@ -27,6 +27,7 @@ IW_SCAN_PATTERNS = {
     }
 
 IPERF_DURATION_PATTERN = re.compile(r"""-t\s+(?P<duration>\d+)""", re.VERBOSE)
+IPERF_BW_PATTERN = re.compile(r"""(?P<bw>[\d\.]+)\sMbits/sec""", re.VERBOSE)
 
 
 
@@ -166,15 +167,30 @@ def get_station_dump():
   return station_dump
 
 
-def iperf_server_worker(port, udp):
-  logger.debug("Starting iperf %s server on port %d" % ('UDP' if udp else 'TCP', port))
-  cmd = 'iperf -s -i 1 -p %d -f m' % (port)
-  if udp:
-    cmd = '%s -u' % (cmd)
+class IperfServerThread(threading.Thread):
 
-  logger.debug(cmd)
-  subprocess.check_output(cmd, shell=True)
+  def __init__(self, port, udp, mac):
+    super(IperfServerThread, self).__init__()
+    logger.debug("Starting iperf %s server on port %d" % ('UDP' if udp else 'TCP', port))
+    self.cmd = 'iperf -s -i 1 -p %d -f m' % (port)
+    if udp:
+      self.cmd = '%s -u' % (self.cmd)
 
+    self.bws = []
+    self.mac = mac
+
+  def run(self):
+    logger.debug(self.cmd)
+    proc = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE)
+    while proc.poll() is None:
+      try:
+        line = proc.stdout.readline()
+        match = IPERF_BW_PATTERN.search(line)
+        if match is not None:
+          self.bws.append(float(match.group('bw')))
+      except:
+        logger.exception("Failed to read iperf output.")
+        break
 
 
 class CollectHandler(RequestHandler):
@@ -271,7 +287,7 @@ class CollectHandler(RequestHandler):
               port = random.randint(*settings.IPERF_PORT_RANGE)
               if port not in iperf_servers:
                 break
-            t = threading.Thread(target=iperf_server_worker, args=(port, '-u' in self.request['iperfArgs']))
+            t = IperfServerThread(port, '-u' in self.request['iperfArgs'], mac)
             t.start()
             iperf_servers[port] = t
             self.request['iperfArgs'] = iperfArgs % (port)
@@ -297,6 +313,14 @@ class CollectHandler(RequestHandler):
           t.join()
 
       if len(iperf_servers) > 0:
+        client_bw = dict((t.mac, t.bws) for t in iperf_servers.values())
+        for entry in self.reply['clientThroughput']:
+          mac = entry['MAC']
+          if mac in client_bw:
+            logger.debug("Updating bandwidths for %s: %s" % (mac, str(client_bw[mac])))
+            entry['bandwidths'] = client_bw[mac]
+            entry['overallBandwidth'] = client_bw[mac][-1]
+
         logger.debug("Killing iperf servers.")
         try:
           subprocess.check_call('pgrep -f "iperf" | xargs kill -9', shell=True)
