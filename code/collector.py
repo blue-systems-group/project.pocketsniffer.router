@@ -167,17 +167,46 @@ def get_station_dump():
   return station_dump
 
 
-class IperfServerThread(threading.Thread):
+class IperfThread(threading.Thread):
 
   def __init__(self, port, udp, mac):
-    super(IperfServerThread, self).__init__()
+    super(IperfThread, self).__init__()
+    self.bws = []
+    self.mac = mac
+
+  def run(self):
+    logger.debug(self.cmd)
+    proc = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE)
+    while proc.poll() is None:
+      try:
+        line = proc.stdout.readline()
+        match = IPERF_BW_PATTERN.search(line)
+        if match is not None:
+          self.bws.append(float(match.group('bw')))
+      except:
+        logger.exception("Failed to read iperf output.")
+        break
+
+
+class IperfClientThread(IperfThread):
+
+  def __init__(self, port, udp, mac, client_ip):
+    super(IperfClientThread, self).__init__(port, udp, mac)
+    self.cmd = 'iperf -c %s -t 20 -f m -i 1 -p %d' % (client_ip, port)
+    if udp:
+      self.cmd = '%s -u -b 72M' % (self.cmd)
+    logger.debug("Starting iperf %s client on port %d with server %s" % ('UDP' if udp else 'TCP', port, client_ip))
+
+
+
+class IperfServerThread(IperfThread):
+
+  def __init__(self, port, udp, mac):
+    super(IperfServerThread, self).__init__(port, udp, mac)
     logger.debug("Starting iperf %s server on port %d" % ('UDP' if udp else 'TCP', port))
     self.cmd = 'iperf -s -i 1 -p %d -f m' % (port)
     if udp:
       self.cmd = '%s -u' % (self.cmd)
-
-    self.bws = []
-    self.mac = mac
 
   def run(self):
     logger.debug(self.cmd)
@@ -256,7 +285,7 @@ class CollectHandler(RequestHandler):
       else:
         block = True
 
-      iperf_servers = dict()
+      iperf_threads = dict()
 
       target_clients = self.request.get('clients', [])
 
@@ -285,11 +314,14 @@ class CollectHandler(RequestHandler):
           if self.request.get('clientThroughput', False):
             while True:
               port = random.randint(*settings.IPERF_PORT_RANGE)
-              if port not in iperf_servers:
+              if port not in iperf_threads:
                 break
-            t = IperfServerThread(port, '-u' in self.request['iperfArgs'], mac)
-            t.start()
-            iperf_servers[port] = t
+            if '-s' in iperfArgs:
+              t = IperfClientThread(port, '-u' in iperfArgs, mac, ip)
+            else:
+              t = IperfServerThread(port, '-u' in iperfArgs, mac)
+              t.start()
+            iperf_threads[port] = t
             self.request['iperfArgs'] = iperfArgs % (port)
 
           msg = json.dumps(self.request)
@@ -307,21 +339,26 @@ class CollectHandler(RequestHandler):
         except:
           logger.exception("Failed to send request.")
 
+      for t in iperf_threads.values():
+        if isinstance(t, IperfClientThread):
+          t.start()
+
       if len(handler_threads) > 0:
         logger.debug("Waiting for %d client replies." % (len(handler_threads)))
         for t in handler_threads:
           t.join()
 
-      if len(iperf_servers) > 0:
-        client_bw = dict((t.mac, t.bws) for t in iperf_servers.values())
-        for entry in self.reply['clientThroughput']:
-          mac = entry['MAC']
-          if mac in client_bw:
-            logger.debug("Updating bandwidths for %s: %s" % (mac, str(client_bw[mac])))
-            entry['bandwidths'] = client_bw[mac]
-            entry['overallBandwidth'] = client_bw[mac][-1]
+      if len(iperf_threads) > 0:
+        if isinstance(iperf_threads.values()[0], IperfServerThread):
+          client_bw = dict((t.mac, t.bws) for t in iperf_threads.values())
+          for entry in self.reply['clientThroughput']:
+            mac = entry['MAC']
+            if mac in client_bw:
+              logger.debug("Updating bandwidths for %s: %s" % (mac, str(client_bw[mac])))
+              entry['bandwidths'] = client_bw[mac]
+              entry['overallBandwidth'] = client_bw[mac][-1]
 
-        logger.debug("Killing iperf servers.")
+        logger.debug("Killing iperf threads.")
         try:
           subprocess.check_call('pgrep -f "iperf" | xargs kill -9', shell=True)
         except:
