@@ -174,12 +174,11 @@ class IperfThread(threading.Thread):
     self.bws = []
     self.mac = mac
 
-  def run(self):
-    logger.debug(self.cmd)
-    proc = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE)
+  def parse_iperf_output(self, proc):
     while proc.poll() is None:
       try:
         line = proc.stdout.readline()
+        logger.debug("Parsing line: %s" % (line))
         match = IPERF_BW_PATTERN.search(line)
         if match is not None:
           self.bws.append(float(match.group('bw')))
@@ -187,15 +186,31 @@ class IperfThread(threading.Thread):
         logger.exception("Failed to read iperf output.")
         break
 
+    if proc.poll() != 0:
+      logger.debug("Failed to run iperf: %s" % (proc.stderr.read()))
+
+
 
 class IperfClientThread(IperfThread):
 
   def __init__(self, port, udp, mac, client_ip):
     super(IperfClientThread, self).__init__(port, udp, mac)
-    self.cmd = 'iperf -c %s -t 20 -f m -i 1 -p %d' % (client_ip, port)
+    self.cmd = 'iperf -c %s -t 10 -f m -i 1 -p %d' % (client_ip, port)
     if udp:
       self.cmd = '%s -u -b 72M' % (self.cmd)
     logger.debug("Starting iperf %s client on port %d with server %s" % ('UDP' if udp else 'TCP', port, client_ip))
+
+
+  def run(self):
+    logger.debug(self.cmd)
+    for unused in range(0, 20):
+      proc = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      time.sleep(1)
+      if proc.poll() is None:
+        break
+      proc.kill()
+    self.parse_iperf_output(proc)
+
 
 
 
@@ -210,16 +225,8 @@ class IperfServerThread(IperfThread):
 
   def run(self):
     logger.debug(self.cmd)
-    proc = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE)
-    while proc.poll() is None:
-      try:
-        line = proc.stdout.readline()
-        match = IPERF_BW_PATTERN.search(line)
-        if match is not None:
-          self.bws.append(float(match.group('bw')))
-      except:
-        logger.exception("Failed to read iperf output.")
-        break
+    proc = subprocess.Popen(self.cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    self.parse_iperf_output(proc)
 
 
 class CollectHandler(RequestHandler):
@@ -338,6 +345,10 @@ class CollectHandler(RequestHandler):
             conn.close()
         except:
           logger.exception("Failed to send request.")
+
+      if any([isinstance(t, IperfClientThread) for t in iperf_threads.values()]):
+        logger.debug("Waiting for client's iperf server to start.")
+        time.sleep(10)
 
       for t in iperf_threads.values():
         if isinstance(t, IperfClientThread):

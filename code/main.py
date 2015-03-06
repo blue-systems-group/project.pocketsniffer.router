@@ -13,7 +13,7 @@ import settings
 
 
 from collector import CollectHandler, ReplyHandler
-from executor import APConfigHandler, ClientExecuteHandler
+from executor import APConfigHandler, ClientExecuteHandler, JammingHandler
 from heartbeat import HeartbeatThread
 
 logger = logging.getLogger('pocketsniffer')
@@ -23,6 +23,8 @@ HANDLER_MAPPING = {
     'apConfig': APConfigHandler,
     'clientReassoc': ClientExecuteHandler,
     'clientReboot': ClientExecuteHandler,
+    'startJamming': JammingHandler,
+    'stopJamming': JammingHandler,
     }
 
 
@@ -41,7 +43,6 @@ def main() :
     subprocess.check_call('pgrep -f "iperf" | xargs kill -9', shell=True)
   except:
     pass
-
 
 
   server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

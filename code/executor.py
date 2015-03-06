@@ -2,6 +2,7 @@ import socket
 import json
 import logging
 import subprocess
+import time
 
 from common import RequestHandler
 from collector import get_station_dump
@@ -101,3 +102,26 @@ class ClientExecuteHandler(RequestHandler):
         conn.close()
       except:
         logger.exception("Failed to forward message to client.")
+
+
+class JammingHandler(RequestHandler):
+
+  def handle(self):
+    if self.request['action'] == 'startJamming':
+      jamming_channel = self.request['jammingChannel']
+      logger.debug("Jamming channel %d" % (jamming_channel))
+      utils.set_channel(jamming_channel)
+      stations = [sta for sta in get_station_dump()['band2g'] if 'IP' in sta]
+      if len(stations) == 0:
+        logger.debug("Not stations, can not jam.")
+      else:
+        client_ip = stations[0]['IP']
+        subprocess.Popen('iperf -c %s -u -b 36M -t 1000000' % (client_ip), shell=True)
+    elif self.request['action'] == 'stopJamming':
+      logger.debug("Stop Jamming")
+      try:
+        subprocess.check_call('pgrep -f "iperf" | xargs kill -9', shell=True)
+      except:
+        pass
+
+    self.send_reply()

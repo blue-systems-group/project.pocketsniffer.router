@@ -33,6 +33,8 @@ def get_channel(is_5g=False) :
   return int(output.split('=')[1])
 
 
+IW_CHANNEL_PATTERN = re.compile(r"""channel\s(?P<channel>[\d]*)\s""", re.VERBOSE)
+
 def set_channel(channel) :
   """Set current channel."""
   if channel not in settings.VALID_CHANNELS:
@@ -47,8 +49,15 @@ def set_channel(channel) :
   subprocess.check_call(['uci', 'commit'])
 
   # this is the command that actually switches channel
-  args = ['hostapd_cli', '-i', 'wlan%d' % (idx), 'chan_switch', '1', str(channel2freq(channel)), 'ht']
+  args = ['hostapd_cli', '-i', 'wlan%d' % (idx), 'chan_switch', '3', str(channel2freq(channel)), 'ht']
   subprocess.check_call(args)
+
+  for unused in range(0, 3):
+    time.sleep(1)
+    output = subprocess.check_output('iw wlan%d info' % (idx), shell=True)
+    match = IW_CHANNEL_PATTERN.search(output)
+    if match is not None and int(match.group('channel')) == channel:
+      break
 
 
 def set_txpower(txpower_dbm, is_5g=False) :
