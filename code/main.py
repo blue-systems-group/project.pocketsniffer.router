@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import socket
+import zlib
 import json
 import logging
 import subprocess
@@ -58,8 +59,11 @@ def main() :
   try:
     while True:
       conn, addr = server_sock.accept()
+
+      data = utils.recv_all(conn)
+
       try:
-        request = json.loads(utils.recv_all(conn))
+        request = json.loads(data)
       except:
         logger.exception("Failed to read message.")
         continue

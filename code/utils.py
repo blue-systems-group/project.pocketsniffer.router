@@ -1,10 +1,15 @@
 import subprocess
+import logging
+import zlib
 import time
 import re
 from json import JSONEncoder
 from datetime import datetime as dt
 
 import settings
+
+
+logger = logging.getLogger('pocketsniffer')
 
 
 def channel2freq(channel) :
@@ -98,17 +103,27 @@ def station_dump(iface='wlan0'):
 
 def recv_all(sock) :
   """Read as many as bytes from socket."""
-  content = []
+  chunks = []
   sock.settimeout(settings.READ_TIMEOUT_SEC)
   try :
     while True :
-      data = sock.recv(settings.BUF_SIZE)
-      if len(data) == 0 :
+      chunk = sock.recv(settings.BUF_SIZE)
+      if len(chunk) == 0 :
         break
-      content.append(data)
+      chunks.append(chunk)
   except :
     pass
-  return ''.join(content)
+
+  data = ''.join(chunks)
+  try:
+    prev_size = len(data)
+    data = zlib.decompress(data)
+    after_size = len(data)
+    logger.debug("Compressed msg: %d -> %d (%.2f%%)" % (after_size, prev_size, float(prev_size)/after_size*100))
+  except zlib.error:
+    pass
+  
+  return data
 
 
 IP_PATTERN = re.compile(r"""inet\saddr:(?P<IP>[\d\.]{7,15})\s*""", re.VERBOSE)

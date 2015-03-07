@@ -1,4 +1,5 @@
 import socket
+import zlib
 import json
 import logging
 import subprocess
@@ -98,7 +99,7 @@ class ClientExecuteHandler(RequestHandler):
       logger.debug("Forwarding to %s" % (sta['MAC']))
       try:
         conn = socket.create_connection((sta['IP'], settings.PUBLIC_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
-        conn.sendall(json.dumps(self.request))
+        conn.sendall(zlib.compress(json.dumps(self.request)))
         conn.close()
       except:
         logger.exception("Failed to forward message to client.")
@@ -116,7 +117,7 @@ class JammingHandler(RequestHandler):
         logger.debug("Not stations, can not jam.")
       else:
         client_ip = stations[0]['IP']
-        subprocess.Popen('iperf -c %s -u -b 36M -t 1000000' % (client_ip), shell=True)
+        subprocess.Popen('iperf -c %s -u -b 72M -t 1000000' % (client_ip), shell=True)
     elif self.request['action'] == 'stopJamming':
       logger.debug("Stop Jamming")
       try:

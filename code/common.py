@@ -1,4 +1,5 @@
 import threading
+import zlib
 import json
 import socket
 import logging
@@ -13,7 +14,7 @@ class Handler(threading.Thread):
   def send_reply(self):
     logger.debug("Forwarding reply: %s" % (str(json.dumps(self.reply))))
     conn = socket.create_connection((settings.SERVER_NAME, settings.PUBLIC_TCP_PORT))
-    conn.sendall(json.dumps(self.reply))
+    conn.sendall(zlib.compress(json.dumps(self.reply)))
     conn.shutdown(socket.SHUT_WR)
     conn.close()
  
@@ -34,7 +35,7 @@ class RequestHandler(threading.Thread):
 
   def send_reply(self):
     logger.debug("Sending back reply.")
-    self.conn.sendall(json.dumps(self.reply))
+    self.conn.sendall(zlib.compress(json.dumps(self.reply)))
     self.conn.shutdown(socket.SHUT_WR)
     self.conn.close()
 

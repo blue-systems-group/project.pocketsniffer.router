@@ -1,4 +1,5 @@
 import json
+import zlib
 import time
 import re
 import socket
@@ -178,7 +179,6 @@ class IperfThread(threading.Thread):
     while proc.poll() is None:
       try:
         line = proc.stdout.readline()
-        logger.debug("Parsing line: %s" % (line))
         match = IPERF_BW_PATTERN.search(line)
         if match is not None:
           self.bws.append(float(match.group('bw')))
@@ -234,7 +234,8 @@ class CollectHandler(RequestHandler):
 
   def handle_client_reply(self, conn):
     try:
-      client_reply = json.loads(utils.recv_all(conn))
+      data = utils.recv_all(conn)
+      client_reply = json.loads(data)
       conn.close()
     except:
       logger.exception("Failed to decode client reply.")
