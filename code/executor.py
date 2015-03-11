@@ -99,7 +99,7 @@ class ClientExecuteHandler(RequestHandler):
       logger.debug("Forwarding to %s" % (sta['MAC']))
       try:
         conn = socket.create_connection((sta['IP'], settings.PUBLIC_TCP_PORT), settings.CONNECTION_TIMEOUT_SEC*1000)
-        conn.sendall(zlib.compress(json.dumps(self.request)))
+        conn.sendall(json.dumps(self.request))
         conn.close()
       except:
         logger.exception("Failed to forward message to client.")
